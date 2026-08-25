@@ -77,7 +77,24 @@ def local_flag_filename(url):
     return f"{match.group(1).replace('/', '-')}.png" if match else None
 
 
+def country_flag_urls():
+    source = (ROOT / "app" / "page.tsx").read_text(encoding="utf-8")
+    block = re.search(r"const countryCodes:[^{]+\{(.*?)\n\};", source, re.DOTALL)
+    if not block:
+        raise RuntimeError("Could not read the website country flag mapping")
+    entries = re.findall(r"(?:'([^']+)'|([A-Za-z]+))\s*:\s*'([^']+)'", block.group(1))
+    return {
+        quoted or bare: f"https://www.speedrun.com/images/flags/{code}.png"
+        for quoted, bare, code in entries
+    }
+
+
 def cache_flag_assets(payload):
+    fallback_urls = country_flag_urls()
+    for player in payload["combined"]:
+        if not player.get("Flag URL"):
+            player["Flag URL"] = fallback_urls.get(player.get("Country"))
+
     flag_targets = {
         player["Flag URL"]: local_flag_filename(player.get("Flag URL"))
         for player in payload["combined"]
