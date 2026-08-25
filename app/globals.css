@@ -57,6 +57,9 @@ select { max-width:240px; padding:0 30px 0 10px; }
 .result-count,.view-toolbar>p { margin-left:auto; color:var(--muted); font-size:11px; white-space:nowrap; }
 .table-scroll { overflow:auto; max-height:calc(100vh - 330px); min-height:380px; }
 .table-scroll.free-height { max-height:none; }
+.progress-loader { min-height:48px; display:flex; align-items:center; justify-content:center; gap:9px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:700; }
+.progress-loader span { width:14px; height:14px; border:2px solid #535b62; border-top-color:var(--blue); border-radius:50%; animation:loader-spin .75s linear infinite; }
+@keyframes loader-spin { to { transform:rotate(360deg); } }
 table { width:100%; border-collapse:separate; border-spacing:0; font-size:12px; }
 th { position:sticky; top:0; z-index:3; height:42px; padding:0 13px; border-bottom:1px solid #c8cdd1; background:#f0f1ef; color:#596169; font-size:10px; text-align:left; text-transform:uppercase; font-weight:800; white-space:nowrap; }
 th button { display:inline-flex; align-items:center; gap:4px; border:0; background:none; color:inherit; text-transform:inherit; font:inherit; padding:0; }
