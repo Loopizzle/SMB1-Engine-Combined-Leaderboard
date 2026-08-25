@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -67,6 +68,58 @@ def download_workbook(spreadsheet_id, destination):
     if len(content) < 100_000 or not content.startswith(b"PK"):
         raise RuntimeError("Google Sheets returned an invalid or unexpectedly small workbook")
     destination.write_bytes(content)
+
+
+def local_flag_filename(url):
+    if not isinstance(url, str):
+        return None
+    match = re.fullmatch(r"https://(?:www\.)?speedrun\.com/images/flags/([a-z0-9/_-]+)\.png", url, re.IGNORECASE)
+    return f"{match.group(1).replace('/', '-')}.png" if match else None
+
+
+def cache_flag_assets(payload):
+    flag_targets = {
+        player["Flag URL"]: local_flag_filename(player.get("Flag URL"))
+        for player in payload["combined"]
+        if local_flag_filename(player.get("Flag URL"))
+    }
+    if not flag_targets:
+        print("No Speedrun.com flag assets were found in the workbook")
+        return
+
+    output_dir = ROOT / "public" / "flags"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def download(item):
+        url, filename = item
+        request = urllib.request.Request(url, headers={"User-Agent": "smb1ecl-daily-refresh/1.0"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            content = response.read()
+        if len(content) < 50 or not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError(f"Invalid PNG response for {url}")
+        destination = output_dir / filename
+        temporary = destination.with_suffix(".png.tmp")
+        temporary.write_bytes(content)
+        temporary.replace(destination)
+        return url, f"./flags/{filename}"
+
+    local_urls = {}
+    failures = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(download, item): item[0] for item in flag_targets.items()}
+        for future in as_completed(futures):
+            try:
+                url, local_url = future.result()
+                local_urls[url] = local_url
+            except Exception as error:
+                failures.append(f"{futures[future]}: {error}")
+
+    for player in payload["combined"]:
+        player["Flag URL"] = local_urls.get(player.get("Flag URL"), player.get("Flag URL"))
+
+    print(f"Cached {len(local_urls)} unique flag assets; {len(failures)} remained remote")
+    for failure in failures:
+        print(f"Flag cache warning: {failure}")
 
 
 def extract_payload(workbook_path):
@@ -237,6 +290,7 @@ def main():
             download_workbook(spreadsheet_id, workbook_path)
         payload = extract_payload(workbook_path)
         validate_payload(payload)
+        cache_flag_assets(payload)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary_output = args.output.with_suffix(args.output.suffix + ".tmp")
