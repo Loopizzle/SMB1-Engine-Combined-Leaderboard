@@ -272,8 +272,9 @@ tbody tr:hover td { background:#292e32; }
   .snapshot-bar>div>svg { width:15px; height:15px; }
   .snapshot-bar strong { font-size:16px; }
   .snapshot-bar span { margin-top:4px; font-size:8px; line-height:1.15; }
-  .game-strip { min-height:58px; gap:6px; padding:10px 0; scroll-snap-type:x proximity; }
-  .game-strip>span { position:sticky; left:0; z-index:2; align-self:stretch; display:flex; align-items:center; padding-right:5px; background:var(--canvas); }
+  .game-strip { min-height:58px; gap:6px; padding:10px 0; scroll-snap-type:x proximity; scrollbar-width:none; }
+  .game-strip::-webkit-scrollbar { display:none; }
+  .game-strip>span { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding-right:5px; }
   .game-chip { height:38px; padding:0 11px; scroll-snap-align:start; }
   .table-toolbar,.view-toolbar { flex-wrap:wrap; gap:8px; padding:10px; }
   .search-box { height:44px; flex-basis:100%; min-width:100%; }
