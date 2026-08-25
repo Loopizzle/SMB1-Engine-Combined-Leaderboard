@@ -58,12 +58,21 @@ function speedrunUrl(value: string | null | undefined) {
     return null;
   }
 }
+function flagSource(value: string | null | undefined) {
+  if (value && /^\.\/flags\/[a-z0-9-]+\.png$/i.test(value)) return value;
+  return speedrunUrl(value);
+}
 function flagFor(player: { Runner?: string; runner?: string }, flags: Map<string, string | null>) { return flags.get(player.Runner || player.runner || '') || null; }
 function Flag({ url }: { url: string | null }) {
-  const src = speedrunUrl(url);
+  const src = flagSource(url);
+  return src ? <FlagImage key={src} src={src} /> : <span className="flag flag-placeholder" />;
+}
+function FlagImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="flag flag-placeholder" />;
   // Speedrun.com owns these tiny country assets; preserving their URLs keeps custom community flags intact.
   // eslint-disable-next-line @next/next/no-img-element
-  return src ? <img className="flag" src={src} alt="" loading="lazy" decoding="async" /> : <span className="flag flag-placeholder" />;
+  return <img className="flag" src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
 }
 function AutoLoadMore({ hasMore, label, onLoadMore }: { hasMore: boolean; label: string; onLoadMore: () => void }) {
   const sentinel = useRef<HTMLDivElement>(null);
