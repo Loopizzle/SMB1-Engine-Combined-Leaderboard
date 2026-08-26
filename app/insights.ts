@@ -81,15 +81,24 @@ export type Rivalry = {
   score: number;
 };
 
-export type EraCareer = {
+export type DynastySeason = {
+  year: number;
+  rank: number;
+  leaderShare: number;
+  performanceScore: number;
+};
+
+export type DynastyCareer = {
   runner: string;
   country: string | null;
-  rating: number;
-  bestIndex: number;
+  titles: number;
+  podiums: number;
+  top10s: number;
+  appearances: number;
   bestYear: number;
   bestRank: number;
-  seasons: number;
-  primeIndex: number;
+  averageLeaderShare: number;
+  seasons: Map<number, DynastySeason>;
 };
 
 export type SeasonStanding = {
@@ -115,6 +124,37 @@ export type CareerSnapshot = {
   games: number;
   wrs: number;
   newRuns: InsightRun[];
+};
+
+export type RaceMetric = 'score' | 'performance' | 'runs' | 'games';
+
+export type CareerRacePoint = CareerSnapshot & {
+  fieldRank: number;
+};
+
+export type CareerRaceSeries = {
+  runner: string;
+  country: string | null;
+  flagUrl: string | null;
+  points: CareerRacePoint[];
+};
+
+export type RankChaseStep = {
+  target: Target;
+  gain: number;
+  projectedScore: number;
+  projectedRank: number;
+};
+
+export type RankChasePlan = {
+  targetRank: number;
+  targetScore: number;
+  requiredGain: number;
+  projectedScore: number;
+  projectedRank: number;
+  remainingGap: number;
+  reached: boolean;
+  steps: RankChaseStep[];
 };
 
 export function baseGameKey(value: string) {
@@ -309,31 +349,75 @@ export function projectedRank(players: InsightPlayer[], runner: string, score: n
   return 1 + players.filter((player) => player.Runner !== runner && Number(player['Total Score']) > score).length;
 }
 
-export function eraHallOfFame(rows: InsightHistoryRow[]): EraCareer[] {
+export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], runs: InsightRun[], boards: InsightBoard[], requestedRank: number, maxGoals = 8): RankChasePlan {
+  const targetRank = Math.max(1, Math.min(Number(player.Rank || 1), Math.floor(Number(requestedRank || 1))));
+  const otherScores = players.filter((item) => item.Runner !== player.Runner).map((item) => Number(item['Total Score'] || 0)).sort((a, b) => b - a);
+  const targetScore = targetRank >= player.Rank ? Number(player['Total Score'] || 0) : Number(otherScores[Math.max(0, targetRank - 1)] || 0) + 0.01;
+  const requiredGain = Math.max(0, targetScore - Number(player['Total Score'] || 0));
+  const candidates = nextTargets(player, runs, boards, Math.max(boards.length, maxGoals)).slice(0, 48);
+  const chosen: Target[] = [];
+  const steps: RankChaseStep[] = [];
+  let projection = simulateRunnerScore(player, runs, boards, []);
+
+  while (projection.score < targetScore && chosen.length < maxGoals) {
+    let best: { target: Target; projection: ReturnType<typeof simulateRunnerScore> } | null = null;
+    for (const target of candidates) {
+      if (chosen.some((item) => item.board.boardKey === target.board.boardKey)) continue;
+      const trialTargets = [...chosen, target];
+      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds })));
+      if (!best || trial.score > best.projection.score) best = { target, projection: trial };
+    }
+    if (!best || best.projection.score <= projection.score + 0.001) break;
+    const gain = best.projection.score - projection.score;
+    chosen.push(best.target);
+    projection = best.projection;
+    steps.push({ target: best.target, gain, projectedScore: projection.score, projectedRank: projectedRank(players, player.Runner, projection.score) });
+  }
+
+  return {
+    targetRank,
+    targetScore,
+    requiredGain,
+    projectedScore: projection.score,
+    projectedRank: projectedRank(players, player.Runner, projection.score),
+    remainingGap: Math.max(0, targetScore - projection.score),
+    reached: projection.score >= targetScore,
+    steps,
+  };
+}
+
+export function dynastyTable(rows: InsightHistoryRow[], startYear: number, endYear: number): DynastyCareer[] {
   const peakByYear = new Map<number, number>();
   for (const row of rows) {
     const year = Number(row.year || 0);
+    if (year < startYear || year > endYear) continue;
     peakByYear.set(year, Math.max(peakByYear.get(year) || 0, Number(row.performanceScore || 0)));
   }
-  const groups = new Map<string, Array<{ index: number; year: number; rank: number; country: string | null }>>();
+  const groups = new Map<string, { country: string | null; seasons: Map<number, DynastySeason> }>();
   for (const row of rows) {
     const year = Number(row.year || 0);
     const peak = peakByYear.get(year) || 0;
-    if (!year || !peak) continue;
-    const list = groups.get(row.runner) || [];
-    list.push({ index: Number(row.performanceScore || 0) / peak * 100, year, rank: Number(row.rank || 0), country: row.country });
-    groups.set(row.runner, list);
+    if (year < startYear || year > endYear || !peak) continue;
+    const current = groups.get(row.runner) || { country: row.country, seasons: new Map<number, DynastySeason>() };
+    current.seasons.set(year, { year, rank: Number(row.rank || 0), leaderShare: Number(row.performanceScore || 0) / peak * 100, performanceScore: Number(row.performanceScore || 0) });
+    groups.set(row.runner, current);
   }
-  return Array.from(groups.entries()).map(([runner, seasons]) => {
-    seasons.sort((a, b) => b.index - a.index);
-    const top = seasons.slice(0, 3);
-    const weights = [0.5, 0.3, 0.2];
-    const usedWeight = top.reduce((sum, _, index) => sum + weights[index], 0);
-    const primeIndex = top.reduce((sum, season, index) => sum + season.index * weights[index], 0) / Math.max(usedWeight, 1);
-    const longevityFactor = 0.85 + 0.15 * Math.min(1, seasons.length / 5);
-    const rating = Math.min(100, primeIndex * longevityFactor);
-    return { runner, country: seasons[0]?.country || null, rating, bestIndex: seasons[0]?.index || 0, bestYear: seasons[0]?.year || 0, bestRank: seasons[0]?.rank || 0, seasons: seasons.length, primeIndex };
-  }).sort((a, b) => b.rating - a.rating || b.bestIndex - a.bestIndex);
+  return Array.from(groups.entries()).map(([runner, data]) => {
+    const seasons = Array.from(data.seasons.values());
+    const best = [...seasons].sort((a, b) => a.rank - b.rank || b.leaderShare - a.leaderShare)[0];
+    return {
+      runner,
+      country: data.country,
+      titles: seasons.filter((season) => season.rank === 1).length,
+      podiums: seasons.filter((season) => season.rank <= 3).length,
+      top10s: seasons.filter((season) => season.rank <= 10).length,
+      appearances: seasons.length,
+      bestYear: best?.year || 0,
+      bestRank: best?.rank || 0,
+      averageLeaderShare: seasons.reduce((sum, season) => sum + season.leaderShare, 0) / Math.max(1, seasons.length),
+      seasons: data.seasons,
+    };
+  }).sort((a, b) => b.titles - a.titles || b.podiums - a.podiums || b.top10s - a.top10s || b.averageLeaderShare - a.averageLeaderShare || a.runner.localeCompare(b.runner));
 }
 
 const SEASON_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
@@ -386,4 +470,59 @@ export function runnerCareerSnapshots(player: InsightPlayer, runs: InsightRun[])
     previousScore = score;
     return snapshot;
   });
+}
+
+export function careerRace(players: InsightPlayer[], runs: InsightRun[], selectedRunners: string[], startYear = 2015, now = new Date()): { periods: string[]; series: CareerRaceSeries[] } {
+  const periods: string[] = [];
+  for (let year = startYear; year <= now.getUTCFullYear(); year += 1) {
+    const finalMonth = year === now.getUTCFullYear() ? now.getUTCMonth() + 1 : 12;
+    for (let month = 1; month <= finalMonth; month += 1) periods.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+
+  type MutableCareer = { performance: number; runs: InsightRun[]; boards: Set<string>; games: Set<string>; wrs: number };
+  const byPeriod = new Map<string, InsightRun[]>();
+  for (const run of runs) {
+    const period = String(run.runDate || '').slice(0, 7);
+    if (!periods.includes(period)) continue;
+    const list = byPeriod.get(period) || [];
+    list.push(run);
+    byPeriod.set(period, list);
+  }
+
+  const states = new Map<string, MutableCareer>();
+  const pointsByRunner = new Map(selectedRunners.map((runner) => [runner, [] as CareerRacePoint[]]));
+  const previousScore = new Map<string, number>();
+  for (const period of periods) {
+    const additions = byPeriod.get(period) || [];
+    for (const run of additions) {
+      const state = states.get(run.runner) || { performance: 0, runs: [], boards: new Set<string>(), games: new Set<string>(), wrs: 0 };
+      state.performance += Number(run.performancePoints || 0);
+      state.runs.push(run);
+      state.boards.add(run.boardKey);
+      state.games.add(baseGameKey(run.gameToggle || run.gameAbbr));
+      state.wrs += Number(run.wrCredit || 0);
+      states.set(run.runner, state);
+    }
+    const scoreByRunner = Array.from(states.entries()).map(([runner, state]) => ({ runner, score: state.performance + Math.sqrt(state.runs.length) * 8 + Math.max(0, state.games.size - 1) * 10 })).sort((a, b) => b.score - a.score || String(a.runner).localeCompare(String(b.runner)));
+    const rankByRunner = new Map(scoreByRunner.map((item, index) => [item.runner, index + 1]));
+    for (const runner of selectedRunners) {
+      const state = states.get(runner);
+      const performance = state?.performance || 0;
+      const runCount = state?.runs.length || 0;
+      const games = state?.games.size || 0;
+      const volume = Math.sqrt(runCount) * 8;
+      const variety = Math.max(0, games - 1) * 10;
+      const score = performance + volume + variety;
+      const newRuns = additions.filter((run) => run.runner === runner).sort((a, b) => b.performancePoints - a.performancePoints);
+      const list = pointsByRunner.get(runner)!;
+      list.push({ period, score, scoreGain: score - (previousScore.get(runner) || 0), performance, volume, variety, runs: runCount, boards: state?.boards.size || 0, games, wrs: state?.wrs || 0, newRuns, fieldRank: rankByRunner.get(runner) || 0 });
+      previousScore.set(runner, score);
+    }
+  }
+
+  const playerMap = new Map(players.map((player) => [player.Runner, player]));
+  return {
+    periods,
+    series: selectedRunners.map((runner) => ({ runner, country: playerMap.get(runner)?.Country || null, flagUrl: playerMap.get(runner)?.['Flag URL'] || null, points: pointsByRunner.get(runner) || [] })),
+  };
 }

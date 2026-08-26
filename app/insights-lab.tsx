@@ -1,17 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Clock3, Crown, FlaskConical, Gauge, Map as MapIcon, Network, Pause, Play, Plus, Search, Sparkles, Target, Trash2, Trophy } from 'lucide-react';
+import { BarChart3, CalendarDays, Clock3, Crown, FlaskConical, Gauge, Map as MapIcon, Network, Pause, Play, Plus, Route, Search, Sparkles, Target, Trash2, Trophy, X } from 'lucide-react';
 import {
+  careerRace,
+  dynastyTable,
   engineSeason,
-  eraHallOfFame,
   formatRunTime,
   insightBoardLabel,
   nextTargets,
   parseRunTime,
   projectedRank,
   projectedPlaceForTime,
-  runnerCareerSnapshots,
+  rankChasePlan,
   runnerArchetype,
   runnerRivalries,
   simulateRunnerScore,
@@ -19,6 +20,7 @@ import {
   type InsightHistoryRow,
   type InsightPlayer,
   type InsightRun,
+  type RaceMetric,
 } from './insights';
 
 type LabMode = 'simulator' | 'timeline' | 'map' | 'hall' | 'seasons';
@@ -26,9 +28,9 @@ type Scenario = { boardKey: string; time: string };
 
 const labModes: Array<{ key: LabMode; label: string; icon: typeof FlaskConical }> = [
   { key: 'simulator', label: 'Runner Lab', icon: FlaskConical },
-  { key: 'timeline', label: 'Career Playback', icon: Play },
+  { key: 'timeline', label: 'Career Race', icon: Play },
   { key: 'map', label: 'Engine Map', icon: MapIcon },
-  { key: 'hall', label: 'Era Hall', icon: Crown },
+  { key: 'hall', label: 'Dynasties', icon: Crown },
   { key: 'seasons', label: 'Seasons', icon: Trophy },
 ];
 
@@ -58,7 +60,7 @@ export default function InsightsLab({ players, runs, boards, yearly, gameNames, 
   const [runner, setRunner] = useState(players[0]?.Runner || '');
   const selected = players.find((player) => player.Runner === runner) || players[0] || null;
 
-  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerPlayback player={selected} players={players} runs={runs} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <EraHall rows={yearly} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
+  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <Dynasties rows={yearly} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
 }
 
 function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames, openProfile }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
@@ -71,6 +73,10 @@ function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames
   const timedScenarios = useMemo(() => scenarios.map((scenario) => ({ boardKey: scenario.boardKey, seconds: parseRunTime(scenario.time) })), [scenarios]);
   const projection = useMemo(() => simulateRunnerScore(player, runs, boards, timedScenarios), [boards, player, runs, timedScenarios]);
   const newRank = projectedRank(players, player.Runner, projection.score);
+  const defaultChaseRank = Math.max(1, Number(player.Rank || 1) - 5);
+  const [chaseState, setChaseState] = useState({ runner: player.Runner, rank: defaultChaseRank });
+  const chaseRank = chaseState.runner === player.Runner ? Math.min(player.Rank, chaseState.rank) : defaultChaseRank;
+  const chase = useMemo(() => rankChasePlan(player, players, runs, boards, chaseRank, 8), [boards, chaseRank, player, players, runs]);
 
   function updateScenarios(updater: (rows: Scenario[]) => Scenario[]) {
     setScenarioState((current) => ({ runner: player.Runner, rows: updater(current.runner === player.Runner ? current.rows : defaultScenario) }));
@@ -97,11 +103,17 @@ function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames
           const place = projectedPlaceForTime(player.Runner, scenario.boardKey, seconds, runs);
           return <div className="scenario-row" key={`${player.Runner}-${index}`}><label><span>Board</span><select value={scenario.boardKey} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { boardKey: event.target.value, time: suggestedTime(event.target.value) } : row))}>{boards.map((board) => <option value={board.boardKey} key={board.boardKey}>{gameNames[board.gameAbbr] || board.gameAbbr} - {insightBoardLabel(board)}</option>)}</select></label><label className="time-field"><span>Target time</span><input type="text" inputMode="decimal" value={scenario.time} placeholder="4:55.000" onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, time: event.target.value } : row))} /><small>{place ? `Estimated place: #${place}` : 'Enter m:ss.mmm'}</small></label><button className="icon-button" title="Remove scenario" aria-label="Remove scenario" onClick={() => updateScenarios((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} /></button></div>;
         })}</div>
-        <button className="add-scenario" disabled={scenarios.length >= 5 || !boards.length} onClick={() => updateScenarios((rows) => { const next = targets.find((target) => !rows.some((row) => row.boardKey === target.board.boardKey)); const boardKey = next?.board.boardKey || boards.find((board) => !rows.some((row) => row.boardKey === board.boardKey))?.boardKey || boards[0]?.boardKey || ''; return [...rows, { boardKey, time: next?.goalTime || suggestedTime(boardKey) }]; })}><Plus size={15} /> Add target time</button>
+        <button className="add-scenario" disabled={scenarios.length >= 8 || !boards.length} onClick={() => updateScenarios((rows) => { const next = targets.find((target) => !rows.some((row) => row.boardKey === target.board.boardKey)); const boardKey = next?.board.boardKey || boards.find((board) => !rows.some((row) => row.boardKey === board.boardKey))?.boardKey || boards[0]?.boardKey || ''; return [...rows, { boardKey, time: next?.goalTime || suggestedTime(boardKey) }]; })}><Plus size={15} /> Add target time</button>
         <div className="projection-breakdown"><span>Performance <strong>{projection.performanceDelta >= 0 ? '+' : ''}{fmt(projection.performanceDelta, 2)}</strong></span><span>Volume <strong>+{fmt(projection.volumeDelta, 2)}</strong></span><span>Variety <strong>{projection.varietyDelta >= 0 ? '+' : ''}{fmt(projection.varietyDelta, 2)}</strong></span></div>
       </section>
       <aside className="lab-panel archetype-panel"><div className="archetype-mark"><Sparkles size={20} /><span>Runner archetype</span></div><h3>{archetype.name}</h3><p>{archetype.detail}</p><div className="trait-list">{archetype.traits.map((trait) => <span key={trait}>{trait}</span>)}</div><dl><div><dt>Current rank</dt><dd>#{player.Rank}</dd></div><div><dt>Boards</dt><dd>{player['Unique Boards']}</dd></div><div><dt>WRs</dt><dd>{player.WRs}</dd></div></dl></aside>
     </div>
+    <section className="lab-panel rank-chase-panel">
+      <div className="lab-panel-title"><div><span>Rank chase planner</span><h3>Turn an overall-rank goal into a timed route</h3></div><Route size={22} /></div>
+      <div className="rank-chase-toolbar"><label><span>Desired overall rank</span><input type="number" min="1" max={Math.max(1, player.Rank)} value={chaseRank} disabled={player.Rank === 1} onChange={(event) => setChaseState({ runner: player.Runner, rank: Math.max(1, Math.min(player.Rank, Number(event.target.value || 1))) })} /></label><div><span>Points to catch</span><strong>{chase.requiredGain > 0 ? `+${fmt(chase.requiredGain, 2)}` : 'Already there'}</strong><small>{chase.targetScore > player['Total Score'] ? `${fmt(chase.targetScore, 2)} points clears the line` : `${player.Runner} already owns this position`}</small></div><div><span>Planner result</span><strong>{chase.steps.length ? `Projected #${chase.projectedRank}` : `Current #${player.Rank}`}</strong><small>{chase.reached ? `${chase.steps.length} timed goal${chase.steps.length === 1 ? '' : 's'} found` : chase.remainingGap > 0 ? `${fmt(chase.remainingGap, 2)} points still needed` : 'Choose a higher position'}</small></div><button className="profile-jump" disabled={!chase.steps.length} onClick={() => updateScenarios(() => chase.steps.map((step) => ({ boardKey: step.target.board.boardKey, time: step.target.goalTime })))}>Load route into simulator</button></div>
+      {chase.steps.length ? <div className="rank-chase-route">{chase.steps.map((step, index) => <article key={step.target.board.boardKey}><span>{index + 1}</span><div><strong>{gameNames[step.target.board.gameAbbr] || step.target.board.gameAbbr} - {insightBoardLabel(step.target.board)}</strong><small>Beat {step.target.goalTime} for about #{step.target.proposedPlace}</small></div><em>+{fmt(step.gain, 2)}</em><b>then #{step.projectedRank}</b></article>)}</div> : <div className="rank-chase-empty"><Trophy size={20} /><span>{player.Rank === 1 ? `${player.Runner} is already at the top.` : 'Choose a rank above the current position to build a route.'}</span></div>}
+      <p className="rank-chase-note">The planner greedily selects the largest practical gains from real target times. It is a route, not a prediction of how easy those times will be.</p>
+    </section>
     <div className="lab-split lower">
       <section className="lab-panel"><div className="lab-panel-title"><div><span>Rivalry network</span><h3>Closest competitive neighbors</h3></div><Network size={21} /></div><p className="lab-explainer">Rivals are runners who share many boards with you, especially where the placements are close.</p><div className="rivalry-network"><button className="rival-center" onClick={() => openProfile(player.Runner)}><FlagChip url={player['Flag URL']} /><strong>{player.Runner}</strong><small>#{player.Rank}</small></button>{rivals.map((rival) => <button className="rival-node" onClick={() => openProfile(rival.runner)} key={rival.runner}><FlagChip url={rival.flagUrl} /><span><strong>{rival.runner}</strong><small>{rival.shared} shared boards · {rival.close} within 3 places</small></span><span className="rival-record"><b>You lead {rival.wins}</b><small>You trail {rival.losses}</small></span></button>)}</div></section>
       <section className="lab-panel"><div className="lab-panel-title"><div><span>Concrete goals</span><h3>Highest estimated score gains</h3></div><Target size={21} /></div><p className="lab-explainer">Each goal names a real time to beat. Estimated gain includes performance and, for a new board, volume and game variety.</p><div className="target-list">{targets.slice(0, 6).map((target) => <button key={target.board.boardKey} onClick={() => updateScenarios(() => [{ boardKey: target.board.boardKey, time: target.goalTime }])}><Clock3 size={15} /><span><strong>{gameNames[target.board.gameAbbr] || target.board.gameAbbr} - {insightBoardLabel(target.board)}</strong><small>{target.goalLabel}: beat {target.goalTime} for about #{target.proposedPlace}</small></span><em>+{fmt(target.estimatedGain, 2)}</em></button>)}</div></section>
@@ -109,29 +121,61 @@ function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames
   </div>;
 }
 
-function CareerPlayback({ player, players, runs, runner, setRunner, gameNames, openProfile }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
-  const snapshots = useMemo(() => runnerCareerSnapshots(player, runs), [player, runs]);
-  const [playback, setPlayback] = useState({ runner: player.Runner, index: Math.max(0, snapshots.length - 1), playing: false });
-  const index = playback.runner === player.Runner ? Math.min(playback.index, Math.max(0, snapshots.length - 1)) : Math.max(0, snapshots.length - 1);
-  const playing = playback.runner === player.Runner && playback.playing;
+const RACE_COLORS = ['#ef5a4f', '#69abe0', '#f0bd39', '#73c494'];
+
+function raceValue(point: ReturnType<typeof careerRace>['series'][number]['points'][number], metric: RaceMetric) {
+  if (metric === 'performance') return point.performance;
+  if (metric === 'runs') return point.runs;
+  if (metric === 'games') return point.games;
+  return point.score;
+}
+
+function CareerRace({ player, players, runs, runner, setRunner, gameNames, openProfile }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
+  const defaultRoster = useMemo(() => [player.Runner, ...runnerRivalries(player, runs, players, 2).map((rival) => rival.runner)].filter((name, index, names) => names.indexOf(name) === index), [player, players, runs]);
+  const [rosterState, setRosterState] = useState({ anchor: player.Runner, names: defaultRoster });
+  const roster = rosterState.anchor === player.Runner ? rosterState.names : defaultRoster;
+  const race = useMemo(() => careerRace(players, runs, roster, 2015), [players, roster, runs]);
+  const [metric, setMetric] = useState<RaceMetric>('score');
+  const [playback, setPlayback] = useState({ key: roster.join('|'), index: Math.max(0, race.periods.length - 1), playing: false });
+  const raceKey = roster.join('|');
+  const index = playback.key === raceKey ? Math.min(playback.index, Math.max(0, race.periods.length - 1)) : Math.max(0, race.periods.length - 1);
+  const playing = playback.key === raceKey && playback.playing;
+
   useEffect(() => {
-    if (!playing || !snapshots.length) return;
-    const timer = window.setInterval(() => setPlayback((current) => { const currentIndex = current.runner === player.Runner ? current.index : 0; if (currentIndex >= snapshots.length - 1) return { runner: player.Runner, index: currentIndex, playing: false }; return { runner: player.Runner, index: currentIndex + 1, playing: true }; }), 900);
+    if (!playing || !race.periods.length) return;
+    const timer = window.setInterval(() => setPlayback((current) => { const currentIndex = current.key === raceKey ? current.index : 0; if (currentIndex >= race.periods.length - 1) return { key: raceKey, index: currentIndex, playing: false }; return { key: raceKey, index: currentIndex + 1, playing: true }; }), 170);
     return () => window.clearInterval(timer);
-  }, [player.Runner, playing, snapshots.length]);
-  const snapshot = snapshots[index];
-  const maxScore = Math.max(1, ...snapshots.map((item) => item.score));
-  const label = snapshot ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${snapshot.period}-01T00:00:00Z`)) : 'No dated runs';
+  }, [playing, race.periods.length, raceKey]);
+
+  const period = race.periods[index] || '';
+  const label = period ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}-01T00:00:00Z`)) : 'No history';
+  const racers = race.series.map((series, colorIndex) => ({ series, point: series.points[index], previous: series.points[Math.max(0, index - 1)], color: RACE_COLORS[colorIndex] })).sort((a, b) => raceValue(b.point, metric) - raceValue(a.point, metric));
+  const maxCurrent = Math.max(1, ...racers.map((racer) => raceValue(racer.point, metric)));
+  const maxChart = Math.max(1, ...race.series.flatMap((series) => series.points.slice(0, index + 1).map((point) => raceValue(point, metric))));
+  const previousLeader = index > 0 ? [...race.series].sort((a, b) => raceValue(b.points[index - 1], metric) - raceValue(a.points[index - 1], metric))[0]?.runner : '';
+  const leaderChanged = index > 0 && racers[0]?.series.runner !== previousLeader && raceValue(racers[0]?.point, metric) > 0;
+  const additions = racers.flatMap((racer) => racer.point.newRuns.map((run) => ({ run, runner: racer.series.runner, color: racer.color }))).sort((a, b) => b.run.performancePoints - a.run.performancePoints);
+  const milestones = racers.flatMap((racer) => {
+    const items: string[] = [];
+    if (!racer.previous.runs && racer.point.runs) items.push('first dated run');
+    [1000, 2500, 5000].forEach((threshold) => { if (racer.previous.score < threshold && racer.point.score >= threshold) items.push(`crosses ${fmt(threshold)} points`); });
+    [100, 50, 25, 10, 5, 1].forEach((rank) => { if (racer.point.fieldRank && racer.point.fieldRank <= rank && (!racer.previous.fieldRank || racer.previous.fieldRank > rank)) items.push(`enters reconstructed top ${rank}`); });
+    if (racer.point.games > racer.previous.games) items.push(`reaches ${racer.point.games} game${racer.point.games === 1 ? '' : 's'}`);
+    return items.map((text) => ({ runner: racer.series.runner, text, color: racer.color }));
+  });
+
+  function setRoster(names: string[]) {
+    setRosterState({ anchor: player.Runner, names: names.slice(0, 4) });
+  }
+
   return <div className="lab-stack">
-    <section className="lab-band runner-lab-header"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Play back the career of" /><button className="profile-jump" onClick={() => openProfile(player.Runner)}>Open full profile</button></section>
-    {snapshot ? <>
-      <section className="lab-band playback-controls"><button className="play-button" onClick={() => setPlayback({ runner: player.Runner, index: index >= snapshots.length - 1 ? 0 : index, playing: !playing })}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Play career'}</button><div><strong>{label}</strong><span>{snapshot.newRuns.length} portfolio addition{snapshot.newRuns.length === 1 ? '' : 's'} this month</span></div><input aria-label="Career period" type="range" min="0" max={Math.max(0, snapshots.length - 1)} value={index} onChange={(event) => setPlayback({ runner: player.Runner, index: Number(event.target.value), playing: false })} /></section>
-      <section className="lab-panel career-panel"><div className="lab-panel-title"><div><span>Career playback</span><h3>{player.Runner}&apos;s current portfolio, built over time</h3></div><CalendarDays size={21} /></div><p className="lab-explainer">This stages the runner&apos;s current non-obsolete runs by the date each run was performed. Scores use today&apos;s board sizes and placements, so it shows how the current resume was assembled rather than a frozen historical leaderboard.</p>
-        <div className="career-hero"><div><span>Portfolio score by {label}</span><strong>{fmt(snapshot.score, 2)}</strong><em>+{fmt(snapshot.scoreGain, 2)} added this period</em></div><div className="career-stat-grid"><span><b>{snapshot.runs}</b>runs</span><span><b>{snapshot.boards}</b>boards</span><span><b>{snapshot.games}</b>games</span><span><b>{snapshot.wrs}</b>current WRs</span></div></div>
-        <div className="career-trail" aria-label="Career score timeline">{snapshots.map((item, itemIndex) => <button key={item.period} className={itemIndex === index ? 'active' : ''} title={`${item.period}: ${fmt(item.score, 2)} points`} onClick={() => setPlayback({ runner: player.Runner, index: itemIndex, playing: false })}><i style={{ height: `${Math.max(8, item.score / maxScore * 100)}%` }} /><span>{item.period.slice(2)}</span></button>)}</div>
-        <div className="career-events"><div className="career-events-head"><span>Added in {label}</span><strong>{snapshot.newRuns.length} run{snapshot.newRuns.length === 1 ? '' : 's'} · +{fmt(snapshot.scoreGain, 2)} points</strong></div>{snapshot.newRuns.slice(0, 8).map((run) => <article key={`${run.boardKey}-${run.runner}`}><span>{gameNames[run.gameAbbr] || run.gameAbbr}</span><strong>{insightBoardLabel({ category: run.category, level: run.level, subcategory: run.subcategory })}</strong><em>{run.time || formatRunTime(run.seconds)}</em><small>#{run.place} · {fmt(run.performancePoints, 2)} performance</small></article>)}{snapshot.newRuns.length > 8 && <p>Plus {snapshot.newRuns.length - 8} more additions in this period.</p>}</div>
-      </section>
-    </> : <section className="lab-panel career-empty"><CalendarDays size={28} /><h3>No performed dates are available for {player.Runner}</h3><p>Career playback needs a run date from Speedrun.com.</p></section>}
+    <section className="lab-band race-roster-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Anchor runner" />{roster.length < 4 ? <RunnerSearch players={players.filter((item) => !roster.includes(item.Runner))} value="" onChange={(name) => !roster.includes(name) && setRoster([...roster, name])} label="Add a comparison" /> : <div className="race-limit"><span>Comparison roster</span><strong>Four runners selected</strong></div>}<div className="race-roster">{roster.map((name, colorIndex) => <span style={{ borderColor: RACE_COLORS[colorIndex] }} key={name}><i style={{ background: RACE_COLORS[colorIndex] }} />{name}{colorIndex > 0 && <button title={`Remove ${name}`} aria-label={`Remove ${name}`} onClick={() => setRoster(roster.filter((item) => item !== name))}><X size={12} /></button>}</span>)}</div></section>
+    <section className="lab-band playback-controls race-controls"><button className="play-button" onClick={() => setPlayback({ key: raceKey, index: index >= race.periods.length - 1 ? 0 : index, playing: !playing })}>{playing ? <Pause size={17} /> : <Play size={17} />}{playing ? 'Pause' : 'Race from 2015'}</button><div><strong>{label}</strong><span>{leaderChanged ? `${racers[0].series.runner} takes the comparison lead` : `${additions.length} selected-runner addition${additions.length === 1 ? '' : 's'}`}</span></div><input aria-label="Career race period" type="range" min="0" max={Math.max(0, race.periods.length - 1)} value={index} onChange={(event) => setPlayback({ key: raceKey, index: Number(event.target.value), playing: false })} /><div className="race-metrics">{([{ key: 'score', label: 'Total' }, { key: 'performance', label: 'Performance' }, { key: 'runs', label: 'Runs' }, { key: 'games', label: 'Games' }] as Array<{ key: RaceMetric; label: string }>).map((item) => <button className={metric === item.key ? 'active' : ''} key={item.key} onClick={() => setMetric(item.key)}>{item.label}</button>)}</div></section>
+    <section className="lab-panel career-race-panel"><div className="lab-panel-title"><div><span>Career Race</span><h3>Current portfolios reconstructed from January 2015</h3></div><BarChart3 size={22} /></div><p className="lab-explainer">Every frame includes current non-obsolete runs performed by that month. Whole-field rank is reconstructed with today&apos;s board sizes and placements; it is not a claim about the exact leaderboard that existed then.</p>
+      <div className="race-visual"><svg viewBox="0 0 1000 250" preserveAspectRatio="none" role="img" aria-label={`${metric} comparison through ${label}`}><g className="race-grid"><line x1="0" x2="1000" y1="62.5" y2="62.5" /><line x1="0" x2="1000" y1="125" y2="125" /><line x1="0" x2="1000" y1="187.5" y2="187.5" /></g>{race.series.map((series, seriesIndex) => { const points = series.points.slice(0, index + 1).map((point, pointIndex) => `${race.periods.length > 1 ? pointIndex / (race.periods.length - 1) * 1000 : 0},${244 - raceValue(point, metric) / maxChart * 232}`).join(' '); return <polyline key={series.runner} points={points} fill="none" stroke={RACE_COLORS[seriesIndex]} strokeWidth="5" vectorEffect="non-scaling-stroke" />; })}<line className="race-now" x1={race.periods.length > 1 ? index / (race.periods.length - 1) * 1000 : 0} x2={race.periods.length > 1 ? index / (race.periods.length - 1) * 1000 : 0} y1="0" y2="250" /></svg><div className="race-axis"><span>Jan 2015</span><strong>{label}</strong><span>{race.periods.at(-1)}</span></div></div>
+      <div className="race-standings">{racers.map((racer, racerIndex) => <button key={racer.series.runner} onClick={() => openProfile(racer.series.runner)}><span className="race-position" style={{ borderColor: racer.color }}>{racerIndex + 1}</span><FlagChip url={racer.series.flagUrl} /><div><strong>{racer.series.runner}</strong><small>{racer.point.fieldRank ? `Reconstructed overall #${racer.point.fieldRank}` : 'No dated runs yet'} · {racer.point.runs} runs · {racer.point.games} games</small></div><span className="race-progress"><i style={{ width: `${raceValue(racer.point, metric) / maxCurrent * 100}%`, background: racer.color }} /></span><em>{fmt(raceValue(racer.point, metric), metric === 'score' || metric === 'performance' ? 2 : 0)}<small>{racer.point.scoreGain > 0 ? `+${fmt(racer.point.scoreGain, 2)} score this month` : 'no score change'}</small></em></button>)}</div>
+      <div className="race-moments"><section><div className="career-events-head"><span>Runs added in {label}</span><strong>{additions.length} across selected runners</strong></div>{additions.slice(0, 6).map(({ run, runner: runRunner, color }) => <article key={`${runRunner}-${run.boardKey}`} style={{ borderLeftColor: color }}><span>{runRunner}</span><strong>{gameNames[run.gameAbbr] || run.gameAbbr} - {insightBoardLabel({ category: run.category, level: run.level, subcategory: run.subcategory })}</strong><em>{run.time || formatRunTime(run.seconds)}</em></article>)}{!additions.length && <p>No selected runner added a current portfolio run this month.</p>}</section><section><div className="career-events-head"><span>Milestones</span><strong>{milestones.length} this month</strong></div>{milestones.slice(0, 8).map((milestone, milestoneIndex) => <article key={`${milestone.runner}-${milestone.text}-${milestoneIndex}`} style={{ borderLeftColor: milestone.color }}><span>{milestone.runner}</span><strong>{milestone.text}</strong></article>)}{!milestones.length && <p>No reconstructed milestone this month.</p>}</section></div>
+    </section>
   </div>;
 }
 
@@ -149,9 +193,24 @@ function EngineMap({ player, players, runs, boards, runner, setRunner, gameNames
   return <div className="lab-stack"><section className="lab-band map-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Map for" /><div className="map-game-tabs">{games.map((item) => <button className={(games.includes(game) ? game : games[0]) === item ? 'active' : ''} key={item} onClick={() => { setGame(item); setSelectedKey(''); }}>{gameNames[item] || item}</button>)}</div></section><section className="lab-panel engine-map-panel"><div className="map-summary"><div><span>Conquered</span><strong>{conquered}/{shownBoards.length}</strong></div><div><span>Medals</span><strong>{medals}</strong></div><div><span>World records</span><strong>{records}</strong></div></div><div className="engine-map-grid">{shownBoards.map((board, index) => { const run = own.get(board.boardKey); const state = !run ? 'missing' : run.place === 1 ? 'wr' : run.place <= 3 ? 'medal' : 'ranked'; return <button className={`map-node ${state} ${selectedBoard?.boardKey === board.boardKey ? 'selected' : ''}`} key={board.boardKey} onClick={() => setSelectedKey(board.boardKey)}><span>{index + 1}</span><strong>{board.category}</strong><small>{[board.level, board.subcategory].filter(Boolean).join(' - ') || board.game}</small><em>{run ? `#${run.place}` : '?'}</em></button>; })}</div>{selectedBoard && <div className="map-detail"><span>{gameNames[selectedBoard.gameAbbr] || selectedBoard.gameAbbr}</span><strong>{insightBoardLabel(selectedBoard)}</strong><p>{selectedRun ? `${player.Runner} is #${selectedRun.place} of ${selectedRun.boardSize} with ${fmt(selectedRun.performancePoints, 2)} performance points.` : `${player.Runner} has not submitted to this ${selectedBoard.runCount}-runner board.`}</p></div>}</section></div>;
 }
 
-function EraHall({ rows, openProfile }: { rows: InsightHistoryRow[]; openProfile: (runner: string) => void }) {
-  const careers = useMemo(() => eraHallOfFame(rows).slice(0, 40), [rows]);
-  return <section className="lab-panel hall-panel"><div className="lab-panel-title"><div><span>Era dominance</span><h3>Who was strongest relative to their own time?</h3></div><Crown size={22} /></div><div className="era-key"><article><span>Peak</span><strong>Best single year</strong><small>100 means that year&apos;s performance leader.</small></article><article><span>Prime</span><strong>Best three-year form</strong><small>A 50/30/20 weighted average of the strongest seasons.</small></article><article><span>Rating</span><strong>Career score out of 100</strong><small>Prime form adjusted for longevity, reaching full weight at five seasons.</small></article></div><div className="hall-table"><div className="hall-head"><span>Rank</span><span>Runner</span><span>Best season</span><span>Peak / prime</span><span>Rating</span></div>{careers.map((career, index) => <button key={career.runner} onClick={() => openProfile(career.runner)}><span>{index + 1}</span><strong>{career.runner}<small>{career.seasons} scored season{career.seasons === 1 ? '' : 's'}</small></strong><span>{career.bestYear}<small>finished #{career.bestRank}</small></span><em>{fmt(career.bestIndex, 1)}<small>{fmt(career.primeIndex, 1)} prime</small></em><b>{fmt(career.rating, 1)}</b></button>)}</div></section>;
+function Dynasties({ rows, openProfile }: { rows: InsightHistoryRow[]; openProfile: (runner: string) => void }) {
+  const availableYears = useMemo(() => Array.from(new Set(rows.map((row) => Number(row.year || 0)).filter((year) => year >= 2015))).sort((a, b) => a - b), [rows]);
+  const firstYear = availableYears[0] || 2015;
+  const lastYear = availableYears.at(-1) || new Date().getUTCFullYear();
+  const [range, setRange] = useState({ start: firstYear, end: lastYear });
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  const years = availableYears.filter((year) => year >= start && year <= end);
+  const careers = useMemo(() => dynastyTable(rows, start, end).slice(0, 35), [end, rows, start]);
+  const champions = years.map((year) => rows.find((row) => Number(row.year) === year && Number(row.rank) === 1));
+  const gridTemplate = `minmax(170px,1.3fr) repeat(${Math.max(1, years.length)}, minmax(62px,.55fr)) minmax(155px,1fr)`;
+  return <div className="lab-stack">
+    <section className="lab-band dynasty-toolbar"><div><span>Explore an era</span><strong>{start}–{end}</strong><small>Sorted by titles, then podiums, then top-10 seasons</small></div><label><span>From</span><select value={range.start} onChange={(event) => setRange((current) => ({ ...current, start: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label><label><span>Through</span><select value={range.end} onChange={(event) => setRange((current) => ({ ...current, end: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label></section>
+    <section className="lab-panel dynasty-panel"><div className="lab-panel-title"><div><span>Dynasties</span><h3>Titles and staying power, year by year</h3></div><Crown size={22} /></div><p className="lab-explainer">There is no hidden career rating. Gold means yearly champion, silver and bronze mean podium finishes, and every cell states the runner&apos;s actual yearly rank. The percentage shows performance relative to that year&apos;s leader.</p>
+      <div className="champion-belt">{champions.map((champion, index) => <button key={years[index]} disabled={!champion} onClick={() => champion && openProfile(champion.runner)}><span>{years[index]}</span><strong>{champion?.runner || 'No data'}</strong><small>{champion ? `${fmt(champion.performanceScore, 1)} performance` : '-'}</small></button>)}</div>
+      <div className="dynasty-scroll"><div className="dynasty-matrix"><div className="dynasty-head" style={{ gridTemplateColumns: gridTemplate }}><span>Runner</span>{years.map((year) => <span key={year}>{year}</span>)}<span>Accomplishments</span></div>{careers.map((career, careerIndex) => <div className="dynasty-row" style={{ gridTemplateColumns: gridTemplate }} key={career.runner}><button className="dynasty-runner" onClick={() => openProfile(career.runner)}><span>{careerIndex + 1}</span><strong>{career.runner}<small>{career.appearances} active year{career.appearances === 1 ? '' : 's'}</small></strong></button>{years.map((year) => { const season = career.seasons.get(year); const state = !season ? 'empty' : season.rank === 1 ? 'title' : season.rank === 2 ? 'silver' : season.rank === 3 ? 'bronze' : season.rank <= 10 ? 'top10' : 'active'; return <button className={`dynasty-cell ${state}`} disabled={!season} title={season ? `${career.runner}: #${season.rank} in ${year}, ${fmt(season.leaderShare, 1)}% of the leader's performance` : `${career.runner}: no scored season in ${year}`} key={year}>{season ? <><strong>#{season.rank}</strong><small>{fmt(season.leaderShare)}%</small></> : <span>–</span>}</button>; })}<div className="dynasty-summary"><strong>{career.titles} title{career.titles === 1 ? '' : 's'}</strong><span>{career.podiums} podium{career.podiums === 1 ? '' : 's'} · {career.top10s} top-10{career.top10s === 1 ? '' : 's'}</span></div></div>)}</div></div>
+    </section>
+  </div>;
 }
 
 function EngineSeasons({ players, runs, openProfile }: { players: InsightPlayer[]; runs: InsightRun[]; openProfile: (runner: string) => void }) {
