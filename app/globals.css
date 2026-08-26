@@ -398,11 +398,12 @@ tbody tr:hover td { background:#292e32; }
 .simulation-score .improved strong { color:var(--green); }
 .simulation-score>em { color:var(--gold); font-family:var(--font-geist-mono),monospace; font-size:14px; font-style:normal; font-weight:800; }
 .scenario-list { display:grid; }
-.scenario-row { min-height:72px; display:grid; grid-template-columns:minmax(190px,1fr) 115px 36px; align-items:end; gap:9px; padding:9px 14px; border-bottom:1px solid #373d42; }
+.scenario-row { min-height:82px; display:grid; grid-template-columns:minmax(190px,1fr) 150px 36px; align-items:end; gap:9px; padding:9px 14px; border-bottom:1px solid #373d42; }
 .scenario-row label { min-width:0; display:grid; gap:4px; color:#949da4; font-size:8px; text-transform:uppercase; font-weight:800; }
 .scenario-row select,.scenario-row input { width:100%; max-width:none; height:36px; border:1px solid #485058; border-radius:3px; background:#292e32; color:#fff; }
 .scenario-row select { padding-left:8px; }
 .scenario-row input { padding:0 8px; }
+.scenario-row label>small { min-height:10px; color:var(--blue); font-size:8px; text-transform:none; }
 .scenario-row .icon-button { width:36px; height:36px; }
 .add-scenario { margin:12px 14px; color:var(--blue); }
 .add-scenario:disabled { cursor:not-allowed; opacity:.45; }
@@ -424,15 +425,20 @@ tbody tr:hover td { background:#292e32; }
 .archetype-panel dt { color:#8f989f; font-size:8px; text-transform:uppercase; }
 .archetype-panel dd { margin:4px 0 0; color:#fff; font-size:17px; font-weight:800; }
 .rivalry-network,.target-list { display:grid; padding:7px 14px 14px; }
-.rival-center,.rival-node,.target-list button { width:100%; min-height:53px; display:grid; align-items:center; gap:9px; padding:7px 5px; border:0; border-bottom:1px solid #383e43; background:transparent; color:#fff; text-align:left; }
+.rival-center,.rival-node,.target-list button { width:100%; min-height:58px; display:grid; align-items:center; gap:9px; padding:7px 5px; border:0; border-bottom:1px solid #383e43; background:transparent; color:#fff; text-align:left; }
 .rival-center:hover,.rival-node:hover,.target-list button:hover { background:#292e32; }
 .rival-center { grid-template-columns:25px minmax(0,1fr) auto; border-left:3px solid var(--red); padding-left:10px; }
 .rival-node { grid-template-columns:25px minmax(0,1fr) auto; }
+.target-list button { grid-template-columns:20px minmax(0,1fr) auto; }
+.target-list button>svg { color:var(--gold); }
 .rival-node>span,.target-list button>span { min-width:0; }
 .rival-center strong,.rival-node strong,.target-list strong { display:block; overflow:hidden; color:#fff; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .rival-center small,.rival-node small,.target-list small { display:block; margin-top:3px; color:#929ba2; font-size:9px; }
 .rival-center>small,.rival-node em,.target-list em { color:var(--blue); font-size:11px; font-style:normal; font-weight:800; }
 .target-list em { color:var(--green); }
+.rival-record { display:grid; gap:3px; text-align:right; }
+.rival-record b { color:var(--green); font-size:9px; }
+.rival-record small { margin:0; color:#aeb5bb; font-size:8px; }
 .playback-controls { display:grid; grid-template-columns:auto 170px minmax(220px,1fr); }
 .playback-controls>div { display:grid; }
 .playback-controls>div strong { color:#fff; font-size:14px; }
@@ -448,6 +454,37 @@ tbody tr:hover td { background:#292e32; }
 .race-track { height:8px; overflow:hidden; background:#30363b; }
 .race-track i { height:100%; display:block; background:var(--blue); }
 .race-chart em { color:#d8dcde; font-family:var(--font-geist-mono),monospace; font-size:10px; font-style:normal; text-align:right; }
+.career-panel { overflow:hidden; }
+.career-hero { display:grid; grid-template-columns:minmax(240px,.75fr) minmax(360px,1.25fr); align-items:stretch; border-bottom:1px solid #3d4348; background:#202428; }
+.career-hero>div:first-child { display:grid; align-content:center; gap:4px; min-height:118px; padding:18px; border-right:1px solid #3d4348; }
+.career-hero>div:first-child span { color:#929ba2; font-size:9px; text-transform:uppercase; }
+.career-hero>div:first-child strong { color:#fff; font-size:30px; line-height:1; }
+.career-hero>div:first-child em { color:var(--green); font-size:10px; font-style:normal; font-weight:800; }
+.career-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }
+.career-stat-grid span { display:grid; place-content:center; gap:4px; min-width:0; padding:12px; border-right:1px solid #3d4348; color:#929ba2; font-size:8px; text-align:center; text-transform:uppercase; }
+.career-stat-grid span:last-child { border-right:0; }
+.career-stat-grid b { color:#fff; font-size:18px; }
+.career-trail { height:105px; display:flex; align-items:end; gap:3px; overflow-x:auto; padding:12px 14px 8px; border-bottom:1px solid #3d4348; background:#191c1f; scrollbar-width:thin; }
+.career-trail button { min-width:25px; height:80px; display:grid; grid-template-rows:minmax(0,1fr) 14px; align-items:end; gap:3px; padding:0; border:0; background:transparent; color:#758089; }
+.career-trail button i { width:100%; min-height:4px; display:block; background:#59646c; }
+.career-trail button.active i { background:var(--red); }
+.career-trail button.active span { color:#fff; }
+.career-trail button span { overflow:hidden; font-size:7px; text-align:center; writing-mode:vertical-rl; }
+.career-events { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:8px 14px 14px; }
+.career-events-head { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:44px; border-bottom:1px solid #3d4348; }
+.career-events-head span { color:#929ba2; font-size:9px; text-transform:uppercase; }
+.career-events-head strong { color:var(--green); font-size:10px; }
+.career-events article { min-width:0; display:grid; grid-template-columns:72px minmax(0,1fr) auto; gap:3px 9px; padding:10px 8px; border-bottom:1px solid #373d42; }
+.career-events article:nth-of-type(odd) { border-right:1px solid #373d42; }
+.career-events article>span { grid-row:1 / 3; align-self:center; color:var(--gold); font-size:8px; font-weight:800; text-transform:uppercase; }
+.career-events article strong { min-width:0; overflow:hidden; color:#fff; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.career-events article em { color:#fff; font-family:var(--font-geist-mono),monospace; font-size:10px; font-style:normal; }
+.career-events article small { color:#929ba2; font-size:8px; }
+.career-events>p { grid-column:1 / -1; margin:10px 0 0; color:#929ba2; font-size:9px; }
+.career-empty,.season-empty { min-height:220px; display:grid; place-items:center; align-content:center; gap:8px; padding:24px; color:#89939a; text-align:center; }
+.career-empty h3,.career-empty p { margin:0; }
+.career-empty h3 { color:#fff; font-size:15px; }
+.career-empty p { font-size:10px; }
 .map-toolbar { align-items:end; }
 .map-game-tabs { min-width:0; max-width:100%; flex:1; display:flex; gap:5px; overflow-x:auto; scrollbar-width:thin; }
 .map-game-tabs button { min-width:max-content; height:40px; padding:0 10px; border:1px solid #454c52; border-radius:3px; background:#292e32; color:#aeb5bb; font-size:9px; font-weight:750; }
@@ -476,6 +513,12 @@ tbody tr:hover td { background:#292e32; }
 .map-detail strong { color:#fff; font-size:12px; }
 .map-detail p { margin:0; color:#aeb5bb; font-size:10px; line-height:1.5; }
 .lab-explainer { margin:0; padding:13px 16px; border-bottom:1px solid #3c4247; background:#1c2023; color:#aeb5bb; font-size:10px; line-height:1.55; }
+.era-key { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid #3d4348; background:#1c2023; }
+.era-key article { min-width:0; display:grid; gap:3px; padding:14px 16px; border-right:1px solid #3d4348; }
+.era-key article:last-child { border-right:0; }
+.era-key span { color:var(--blue); font-size:8px; font-weight:850; text-transform:uppercase; }
+.era-key strong { color:#fff; font-size:11px; }
+.era-key small { color:#929ba2; font-size:9px; line-height:1.45; }
 .hall-table,.season-table { display:grid; }
 .hall-head,.hall-table>button { min-height:52px; display:grid; grid-template-columns:60px minmax(160px,1fr) 130px 110px 120px; align-items:center; gap:10px; padding:0 16px; }
 .hall-head { min-height:39px; border-bottom:1px solid #4a5157; background:#2d3236; color:#aeb5bb; font-size:8px; text-transform:uppercase; font-weight:800; }
@@ -491,6 +534,7 @@ tbody tr:hover td { background:#292e32; }
 .season-toolbar>div { display:grid; }
 .season-toolbar span { color:#929ba2; font-size:9px; text-transform:uppercase; font-weight:800; }
 .season-toolbar strong { color:#fff; font-size:22px; }
+.season-toolbar small { color:#929ba2; font-size:9px; }
 .season-awards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
 .season-awards article { min-width:0; min-height:108px; display:grid; grid-template-columns:26px minmax(0,1fr); grid-template-rows:auto auto auto; align-content:center; gap:2px 8px; padding:15px; border:1px solid #41474d; border-top:3px solid var(--gold); background:#22262a; }
 .season-awards article:nth-child(2) { border-top-color:var(--red); }
@@ -506,6 +550,9 @@ tbody tr:hover td { background:#292e32; }
 .season-table strong { display:grid; gap:2px; font-size:11px; }
 .season-table em { color:#aeb5bb; font-size:10px; font-style:normal; }
 .season-table b { color:var(--gold); font-size:13px; text-align:right; }
+.season-empty { min-height:250px; }
+.season-empty strong { color:#fff; font-size:13px; }
+.season-empty span { font-size:9px; }
 .runner-intelligence-body { padding-top:0; }
 .profile-intelligence { margin-top:0; }
 .profile-archetype { display:grid; grid-template-columns:24px minmax(0,1fr); gap:9px; padding:13px; border-left:3px solid var(--gold); background:#292e32; }
@@ -546,7 +593,7 @@ tbody tr:hover td { background:#292e32; }
   .simulation-score { min-height:88px; grid-template-columns:minmax(0,1fr) 15px minmax(0,1fr); padding:11px 12px; }
   .simulation-score strong { font-size:22px; }
   .simulation-score>em { grid-column:1 / 4; padding-top:7px; border-top:1px solid #343a3f; text-align:right; }
-  .scenario-row { grid-template-columns:minmax(0,1fr) 86px 36px; gap:6px; padding:9px 10px; }
+  .scenario-row { min-height:88px; grid-template-columns:minmax(0,1fr) 116px 36px; gap:6px; padding:9px 10px; }
   .scenario-row select { padding-right:20px; font-size:10px; }
   .scenario-row input { font-size:11px; }
   .projection-breakdown span { padding:10px 7px; font-size:7px; }
@@ -557,6 +604,14 @@ tbody tr:hover td { background:#292e32; }
   .rivalry-network,.target-list { padding:5px 10px 10px; }
   .playback-controls { grid-template-columns:130px minmax(0,1fr); gap:10px; }
   .playback-controls input { grid-column:1 / 3; }
+  .career-hero { grid-template-columns:1fr; }
+  .career-hero>div:first-child { min-height:92px; border-right:0; border-bottom:1px solid #3d4348; }
+  .career-stat-grid span { padding:10px 5px; }
+  .career-stat-grid b { font-size:15px; }
+  .career-events { grid-template-columns:1fr; padding:6px 10px 10px; }
+  .career-events article:nth-of-type(odd) { border-right:0; }
+  .career-events-head { align-items:flex-start; flex-direction:column; justify-content:center; gap:3px; }
+  .career-events article { grid-template-columns:55px minmax(0,1fr) auto; padding:10px 2px; }
   .race-chart { padding:5px 9px 10px; }
   .race-chart button { grid-template-columns:24px minmax(72px,105px) minmax(55px,1fr) 64px; gap:6px; }
   .race-chart button>strong { font-size:9px; }
@@ -570,10 +625,13 @@ tbody tr:hover td { background:#292e32; }
   .map-detail { grid-template-columns:1fr; gap:4px; padding:11px 12px; }
   .map-detail p { margin-top:3px; }
   .hall-panel,.season-panel { overflow:hidden; }
+  .era-key { grid-template-columns:1fr; }
+  .era-key article { padding:10px 12px; border-right:0; border-bottom:1px solid #343a3f; }
+  .era-key article:last-child { border-bottom:0; }
   .hall-head,.hall-table>button { grid-template-columns:34px minmax(92px,1fr) 70px 76px; gap:5px; padding:0 9px; }
   .hall-head span:nth-child(3),.hall-table>button>span:nth-child(3) { display:none; }
   .hall-head span:nth-child(4) { font-size:0; }
-  .hall-head span:nth-child(4)::after { content:'Index'; font-size:8px; }
+  .hall-head span:nth-child(4)::after { content:'Peak'; font-size:8px; }
   .hall-head span:nth-child(5) { font-size:0; }
   .hall-head span:nth-child(5)::after { content:'Rating'; font-size:8px; }
   .hall-table>button { min-height:50px; }
