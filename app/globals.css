@@ -398,7 +398,7 @@ tbody tr:hover td { background:#292e32; }
 .simulation-score .improved strong { color:var(--green); }
 .simulation-score>em { color:var(--gold); font-family:var(--font-geist-mono),monospace; font-size:14px; font-style:normal; font-weight:800; }
 .scenario-list { display:grid; }
-.scenario-row { min-height:82px; display:grid; grid-template-columns:minmax(190px,1fr) 150px 36px; align-items:end; gap:9px; padding:9px 14px; border-bottom:1px solid #373d42; }
+.scenario-row { min-height:82px; display:grid; grid-template-columns:minmax(190px,1fr) minmax(145px,.7fr) 155px 36px; align-items:end; gap:9px; padding:9px 14px; border-bottom:1px solid #373d42; }
 .scenario-row label { min-width:0; display:grid; gap:4px; color:#949da4; font-size:8px; text-transform:uppercase; font-weight:800; }
 .scenario-row select,.scenario-row input { width:100%; max-width:none; height:36px; border:1px solid #485058; border-radius:3px; background:#292e32; color:#fff; }
 .scenario-row select { padding-left:8px; }
@@ -436,6 +436,8 @@ tbody tr:hover td { background:#292e32; }
 .rival-center small,.rival-node small,.target-list small { display:block; margin-top:3px; color:#929ba2; font-size:9px; }
 .rival-center>small,.rival-node em,.target-list em { color:var(--blue); font-size:11px; font-style:normal; font-weight:800; }
 .target-list em { color:var(--green); }
+.target-list .target-meta,.rank-chase-route .target-meta { color:#7fabbf; font-size:8px; }
+.target-list>.rank-chase-empty { margin:0; }
 .rival-record { display:grid; gap:3px; text-align:right; }
 .rival-record b { color:var(--green); font-size:9px; }
 .rival-record small { margin:0; color:#aeb5bb; font-size:8px; }
@@ -671,6 +673,7 @@ tbody tr:hover td { background:#292e32; }
 .profile-insight-block strong { font-size:10px; }
 .profile-insight-block small { margin-top:3px; color:#929ba2; font-size:8px; }
 .profile-insight-block em { color:var(--green); font-size:10px; font-style:normal; font-weight:800; }
+.profile-insight-block>p { margin:0; padding:10px 3px; color:#929ba2; font-size:9px; }
 
 @media (max-width:1040px) {
   .lab-split { grid-template-columns:minmax(0,1.4fr) minmax(230px,.7fr); }
@@ -698,7 +701,8 @@ tbody tr:hover td { background:#292e32; }
   .simulation-score { min-height:88px; grid-template-columns:minmax(0,1fr) 15px minmax(0,1fr); padding:11px 12px; }
   .simulation-score strong { font-size:22px; }
   .simulation-score>em { grid-column:1 / 4; padding-top:7px; border-top:1px solid #343a3f; text-align:right; }
-  .scenario-row { min-height:88px; grid-template-columns:minmax(0,1fr) 116px 36px; gap:6px; padding:9px 10px; }
+  .scenario-row { min-height:142px; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 36px; gap:7px 6px; padding:9px 10px; }
+  .scenario-row label:first-child { grid-column:1 / -1; }
   .scenario-row select { padding-right:20px; font-size:10px; }
   .scenario-row input { font-size:11px; }
   .projection-breakdown span { padding:10px 7px; font-size:7px; }

@@ -32,6 +32,8 @@ export type InsightRun = {
   time: string;
   runDate: string | null;
   country: string | null;
+  platform: string | null;
+  hardware: string | null;
 };
 
 export type InsightBoard = {
@@ -68,6 +70,27 @@ export type Target = {
   goalSeconds: number;
   goalTime: string;
   goalLabel: string;
+  setupKey: string;
+  setupLabel: string;
+  setupSample: number;
+  cadenceFps: number | null;
+  cadenceLabel: string;
+  benchmarkRunner: string;
+  difficulty: string;
+  effort: number;
+  routeValue: number;
+  recordTieCount: number;
+  framesToFind: number | null;
+};
+
+export type InsightSetup = {
+  key: string;
+  platform: string;
+  hardware: string | null;
+  label: string;
+  sample: number;
+  fps: number | null;
+  cadenceLabel: string;
 };
 
 export type Rivalry = {
@@ -200,9 +223,82 @@ export function parseRunTime(value: string) {
   return numbers[0] * 3600 + numbers[1] * 60 + numbers[2];
 }
 
+export const NES_NTSC_FPS = 39375000 / 655171;
+const TIME_TOLERANCE = 0.00075;
+
+function boardText(board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'> | Pick<InsightRun, 'category' | 'level' | 'subcategory'>) {
+  return [board.category, board.level, board.subcategory].filter(Boolean).join(' ');
+}
+
+function boardRegion(board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'> | Pick<InsightRun, 'category' | 'level' | 'subcategory'>) {
+  const text = boardText(board);
+  if (/\bPAL\b/i.test(text)) return 'PAL';
+  if (/\bNTSC\b/i.test(text)) return 'NTSC';
+  return 'Any';
+}
+
+export function setupKey(platform: string | null | undefined, hardware: string | null | undefined) {
+  return `${String(platform || 'Unknown platform')}|||${String(hardware || '')}`;
+}
+
+function cadenceFor(platform: string, board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'>) {
+  const normalized = platform.toLocaleLowerCase();
+  if (boardRegion(board) === 'PAL') return { fps: 50, label: '50 Hz PAL' };
+  if (normalized.includes('switch')) return { fps: 60, label: '60 Hz Switch' };
+  if (normalized.includes('wii virtual console') || normalized.includes('wii u virtual console')) return { fps: 60000 / 1001, label: '59.94 Hz Virtual Console' };
+  if (normalized.includes('game boy advance')) return { fps: 59.7275, label: '59.73 Hz GBA' };
+  if (normalized.includes('3ds virtual console')) return { fps: 60, label: '60 Hz 3DS VC' };
+  if (/nintendo entertainment system|famicom disk system|mister|nes classic|analogue nt|retrousb avs|super nintendo|snes classic|analogue super nt|arcade/.test(normalized)) {
+    return { fps: NES_NTSC_FPS, label: '60.099 Hz NTSC' };
+  }
+  return { fps: null, label: 'Accepted-time cadence' };
+}
+
+export function quantizeRunTime(seconds: number, setup: Pick<InsightSetup, 'fps'> | null | undefined) {
+  if (!Number.isFinite(seconds) || seconds <= 0 || !setup?.fps) return seconds;
+  return Math.max(1 / setup.fps, Math.round(seconds * setup.fps) / setup.fps);
+}
+
+function sameRegionPath(target: InsightBoard, setup: InsightSetup, ownRuns: InsightRun[]) {
+  const region = boardRegion(target);
+  if (region === 'Any') return true;
+  return ownRuns.some((run) => setupKey(run.platform, run.hardware) === setup.key && boardRegion(run) === region);
+}
+
+export function eligibleSetupsForRunner(runner: string, board: InsightBoard, runs: InsightRun[]): InsightSetup[] {
+  const ownRuns = runs.filter((run) => run.runner === runner);
+  const ownSetupKeys = new Set(ownRuns.map((run) => setupKey(run.platform, run.hardware)));
+  const boardRuns = runs.filter((run) => run.boardKey === board.boardKey && run.platform);
+  const grouped = new Map<string, { platform: string; hardware: string | null; sample: number }>();
+  for (const run of boardRuns) {
+    const key = setupKey(run.platform, run.hardware);
+    const current = grouped.get(key) || { platform: String(run.platform), hardware: run.hardware, sample: 0 };
+    current.sample += 1;
+    grouped.set(key, current);
+  }
+  return Array.from(grouped.entries()).map(([key, value]) => {
+    const cadence = cadenceFor(value.platform, board);
+    return { key, ...value, label: [value.platform, value.hardware].filter(Boolean).join(' · '), fps: cadence.fps, cadenceLabel: cadence.label };
+  }).filter((candidate) => ownSetupKeys.has(candidate.key) && sameRegionPath(board, candidate, ownRuns)).sort((a, b) => b.sample - a.sample || a.label.localeCompare(b.label));
+}
+
+export function eligibleBoardsForRunner(runner: string, boards: InsightBoard[], runs: InsightRun[]) {
+  const ownBoards = new Set(runs.filter((run) => run.runner === runner).map((run) => run.boardKey));
+  return boards.filter((board) => ownBoards.has(board.boardKey) || eligibleSetupsForRunner(runner, board, runs).length > 0);
+}
+
+export function setupForScenario(runner: string, board: InsightBoard, requestedKey: string | undefined, runs: InsightRun[]) {
+  const setups = eligibleSetupsForRunner(runner, board, runs);
+  return setups.find((setup) => setup.key === requestedKey) || setups[0] || null;
+}
+
+export function scenarioSeconds(runner: string, board: InsightBoard, requestedKey: string | undefined, seconds: number, runs: InsightRun[]) {
+  return quantizeRunTime(seconds, setupForScenario(runner, board, requestedKey, runs));
+}
+
 export function projectedPlaceForTime(runner: string, boardKey: string, seconds: number, runs: InsightRun[]) {
   if (!boardKey || !Number.isFinite(seconds) || seconds <= 0) return 0;
-  return 1 + runs.filter((run) => run.boardKey === boardKey && run.runner !== runner && Number(run.seconds || 0) > 0 && Number(run.seconds) < seconds - 0.0005).length;
+  return 1 + runs.filter((run) => run.boardKey === boardKey && run.runner !== runner && Number(run.seconds || 0) > 0 && Number(run.seconds) < seconds - TIME_TOLERANCE).length;
 }
 
 export function runnerArchetype(player: InsightPlayer) {
@@ -268,28 +364,48 @@ function median(values: number[]) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function goalTimeForPlace(runner: string, boardKey: string, place: number, runs: InsightRun[]) {
-  const otherTimes = runs.filter((run) => run.boardKey === boardKey && run.runner !== runner && Number(run.seconds || 0) > 0).map((run) => Number(run.seconds)).sort((a, b) => a - b);
-  if (!otherTimes.length) return 0;
-  const threshold = otherTimes[Math.min(otherTimes.length - 1, Math.max(0, place - 1))];
-  return Math.max(0.001, threshold - 0.001);
-}
-
 function targetPlaceFor(currentPlace: number) {
-  if (currentPlace > 50) return Math.max(25, Math.floor(currentPlace * 0.75));
-  if (currentPlace > 25) return 25;
-  if (currentPlace > 10) return 10;
-  if (currentPlace > 3) return 3;
-  return Math.max(1, currentPlace - 1);
+  const milestones = [1, 3, 5, 10, 15, 20, 25, 35, 50, 75, 100, 150, 200, 300, 500, 750, 1000];
+  const next = [...milestones].reverse().find((place) => place < currentPlace);
+  return next || Math.max(1, currentPlace - Math.max(1, Math.round(currentPlace * 0.1)));
 }
 
-function targetLabel(currentPlace: number | null, proposedPlace: number) {
-  if (proposedPlace === 1) return 'World-record push';
+function targetLabel(currentPlace: number | null, proposedPlace: number, recordTieCount: number) {
+  if (!currentPlace && proposedPlace === 1 && recordTieCount > 1) return 'New category, record floor';
+  if (!currentPlace && proposedPlace === 1) return 'New-category WR benchmark';
+  if (!currentPlace) return 'New-category benchmark';
+  if (proposedPlace === 1 && recordTieCount > 1) return 'Match the record floor';
+  if (proposedPlace === 1) return 'World-record benchmark';
   if (proposedPlace <= 3) return 'Podium push';
   if (proposedPlace <= 10) return 'Top-10 push';
   if (proposedPlace <= 25) return 'Top-25 push';
-  if (currentPlace) return `Move up ${currentPlace - proposedPlace} places`;
-  return 'New-board benchmark';
+  return `Move up ${currentPlace - proposedPlace} places`;
+}
+
+export function targetInstruction(target: Pick<Target, 'goalTime' | 'proposedPlace' | 'recordTieCount'>) {
+  return target.proposedPlace === 1 && target.recordTieCount > 1 ? `Match ${target.goalTime}` : `${target.goalTime} or faster`;
+}
+
+function difficultyFor(place: number, size: number, recordTieCount: number) {
+  if (place === 1 && recordTieCount > 1) return 'Solved record';
+  const percentile = (place - 1) / Math.max(1, size - 1);
+  if (place <= 3) return 'Elite';
+  if (place <= 10 || percentile <= 0.05) return 'Very hard';
+  if (percentile <= 0.15) return 'Hard';
+  if (percentile <= 0.35) return 'Competitive';
+  return 'Baseline';
+}
+
+function chooseBenchmark(runner: string, board: InsightBoard, setup: InsightSetup, desiredPlace: number, existing: InsightRun | undefined, runs: InsightRun[]) {
+  const setupRuns = runs.filter((run) => run.boardKey === board.boardKey && setupKey(run.platform, run.hardware) === setup.key && run.runner !== runner && Number(run.seconds || 0) > 0);
+  if (!existing && setupRuns.length < 3) return null;
+  const candidates = existing ? setupRuns.filter((run) => Number(run.seconds) < Number(existing.seconds) - TIME_TOLERANCE) : setupRuns;
+  const lowerBound = desiredPlace <= 5 ? 1 : Math.max(1, Math.floor(desiredPlace * 0.6));
+  const bounded = candidates.filter((run) => Number(run.place) >= lowerBound);
+  const fps = setup.fps;
+  const oneFrameLeap = existing && fps ? candidates.filter((run) => (Number(existing.seconds) - Number(run.seconds)) * fps <= 2.25) : [];
+  const pool = [...new Map([...bounded, ...oneFrameLeap].map((run) => [`${run.runner}|${run.seconds}`, run])).values()];
+  return pool.sort((a, b) => Math.abs(Number(a.place) - desiredPlace) - Math.abs(Number(b.place) - desiredPlace) || Number(b.place) - Number(a.place) || Number(b.seconds) - Number(a.seconds))[0] || null;
 }
 
 export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], limit = 8): Target[] {
@@ -302,24 +418,66 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
   const targets: Target[] = [];
   for (const board of boards) {
     const existing = ownByBoard.get(board.boardKey);
+    if (existing && Number(existing.place) <= 1) continue;
     const size = Math.max(1, Number(board.runCount || 0) + (existing ? 0 : 1));
-    const proposedPlace = existing ? targetPlaceFor(Number(existing.place)) : Math.max(1, Math.min(size, Math.round(size * typicalPercentile)));
-    if (existing && proposedPlace >= Number(existing.place)) continue;
-    const goalSeconds = goalTimeForPlace(player.Runner, board.boardKey, proposedPlace, runs);
-    if (!goalSeconds) continue;
-    const estimatedPlace = projectedPlaceForTime(player.Runner, board.boardKey, goalSeconds, runs);
-    const performanceGain = Math.max(0, runPerformanceScore(estimatedPlace, size) - Number(existing?.performancePoints || 0));
-    const newGames = new Set(games);
-    newGames.add(baseGameKey(board.gameAbbr));
-    const volumeGain = existing ? 0 : Math.sqrt(Number(player['Prolific Score'] || 0) + 1) * 8 - oldVolume;
-    const varietyGain = Math.max(0, newGames.size - 1) * 10 - oldVariety;
-    const estimatedGain = performanceGain + volumeGain + varietyGain;
-    if (estimatedGain > 0.05) targets.push({ board, currentPlace: existing ? Number(existing.place) : null, proposedPlace: estimatedPlace, performanceGain, estimatedGain, missing: !existing, currentSeconds: existing ? Number(existing.seconds || 0) : null, goalSeconds, goalTime: formatRunTime(goalSeconds), goalLabel: targetLabel(existing ? Number(existing.place) : null, estimatedPlace) });
+    const desiredPlace = existing ? targetPlaceFor(Number(existing.place)) : Math.max(1, Math.min(size, Math.round(size * typicalPercentile)));
+    if (existing && desiredPlace >= Number(existing.place)) continue;
+    const boardRuns = runs.filter((run) => run.boardKey === board.boardKey && Number(run.seconds || 0) > 0);
+    const recordTime = Math.min(...boardRuns.map((run) => Number(run.seconds)));
+    const recordTieCount = boardRuns.filter((run) => Math.abs(Number(run.seconds) - recordTime) <= TIME_TOLERANCE).length;
+    const setupTargets: Target[] = [];
+    for (const setup of eligibleSetupsForRunner(player.Runner, board, runs)) {
+      const benchmark = chooseBenchmark(player.Runner, board, setup, desiredPlace, existing, runs);
+      if (!benchmark) continue;
+      const goalSeconds = quantizeRunTime(Number(benchmark.seconds), setup);
+      const estimatedPlace = projectedPlaceForTime(player.Runner, board.boardKey, goalSeconds, runs);
+      if (existing && estimatedPlace >= Number(existing.place)) continue;
+      const performanceGain = Math.max(0, runPerformanceScore(estimatedPlace, size) - Number(existing?.performancePoints || 0));
+      const newGames = new Set(games);
+      newGames.add(baseGameKey(board.gameAbbr));
+      const volumeGain = existing ? 0 : Math.sqrt(Number(player['Prolific Score'] || 0) + 1) * 8 - oldVolume;
+      const varietyGain = Math.max(0, newGames.size - 1) * 10 - oldVariety;
+      const estimatedGain = performanceGain + volumeGain + varietyGain;
+      if (estimatedGain <= 0.05) continue;
+      const percentile = (estimatedPlace - 1) / Math.max(1, size - 1);
+      const movement = existing ? Math.max(0, (Number(existing.place) - estimatedPlace) / Math.max(1, Number(existing.place))) : 0.2;
+      let effort = 1 + (1 - percentile) * 3 + movement * 2 + (setup.sample < 10 ? 0.75 : 0);
+      if (estimatedPlace === 1 && recordTieCount > 1) effort = Math.max(effort, 3);
+      const sameSetup = existing && setupKey(existing.platform, existing.hardware) === setup.key;
+      const framesToFind = sameSetup && setup.fps ? Math.max(1, Math.round((Number(existing.seconds) - goalSeconds) * setup.fps)) : null;
+      setupTargets.push({
+        board,
+        currentPlace: existing ? Number(existing.place) : null,
+        proposedPlace: estimatedPlace,
+        performanceGain,
+        estimatedGain,
+        missing: !existing,
+        currentSeconds: existing ? Number(existing.seconds || 0) : null,
+        goalSeconds,
+        goalTime: formatRunTime(goalSeconds),
+        goalLabel: targetLabel(existing ? Number(existing.place) : null, estimatedPlace, recordTieCount),
+        setupKey: setup.key,
+        setupLabel: setup.label,
+        setupSample: setup.sample,
+        cadenceFps: setup.fps,
+        cadenceLabel: setup.cadenceLabel,
+        benchmarkRunner: benchmark.runner,
+        difficulty: difficultyFor(estimatedPlace, size, recordTieCount),
+        effort,
+        routeValue: estimatedGain / effort,
+        recordTieCount,
+        framesToFind,
+      });
+    }
+    const rankedSetups = setupTargets.sort((a, b) => b.routeValue - a.routeValue || b.estimatedGain - a.estimatedGain || a.effort - b.effort);
+    const currentSetupKey = existing ? setupKey(existing.platform, existing.hardware) : '';
+    const best = (existing ? rankedSetups.find((target) => target.setupKey === currentSetupKey) : null) || rankedSetups[0];
+    if (best) targets.push(best);
   }
-  return targets.sort((a, b) => b.estimatedGain - a.estimatedGain || b.board.runCount - a.board.runCount).slice(0, limit);
+  return targets.sort((a, b) => b.routeValue - a.routeValue || b.estimatedGain - a.estimatedGain || b.board.runCount - a.board.runCount).slice(0, limit);
 }
 
-export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number }>) {
+export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number; setupKey?: string }>) {
   const ownRuns = runs.filter((run) => run.runner === player.Runner);
   const ownByBoard = new Map(ownRuns.map((run) => [run.boardKey, run]));
   const boardMap = new Map(boards.map((board) => [board.boardKey, board]));
@@ -332,7 +490,8 @@ export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], b
     if (!board) continue;
     const existing = ownByBoard.get(scenario.boardKey);
     const size = Math.max(1, Number(board.runCount || 0) + (existing ? 0 : 1));
-    const place = projectedPlaceForTime(player.Runner, scenario.boardKey, scenario.seconds, runs);
+    const adjustedSeconds = scenarioSeconds(player.Runner, board, scenario.setupKey, scenario.seconds, runs);
+    const place = projectedPlaceForTime(player.Runner, scenario.boardKey, adjustedSeconds, runs);
     performanceDelta += runPerformanceScore(Math.min(size, place), size) - Number(existing?.performancePoints || 0);
     if (!existing) addedRuns += 1;
     games.add(baseGameKey(board.gameAbbr));
@@ -364,8 +523,10 @@ export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], r
     for (const target of candidates) {
       if (chosen.some((item) => item.board.boardKey === target.board.boardKey)) continue;
       const trialTargets = [...chosen, target];
-      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds })));
-      if (!best || trial.score > best.projection.score) best = { target, projection: trial };
+      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds, setupKey: item.setupKey })));
+      const gain = trial.score - projection.score;
+      const bestGain = best ? best.projection.score - projection.score : 0;
+      if (!best || gain / Math.max(1, target.effort) > bestGain / Math.max(1, best.target.effort)) best = { target, projection: trial };
     }
     if (!best || best.projection.score <= projection.score + 0.001) break;
     const gain = best.projection.score - projection.score;
