@@ -5,6 +5,8 @@ on:
     branches: [main]
   schedule:
     - cron: '30 7 * * *'
+    # GitHub schedules are best-effort, so retry later if the morning event is skipped.
+    - cron: '30 13 * * *'
   workflow_dispatch:
 
 permissions: {}
