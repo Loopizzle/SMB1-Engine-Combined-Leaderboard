@@ -11,7 +11,7 @@ pnpm run dev
 
 ## GitHub Pages
 
-Every push to `main` builds and deploys the static website through GitHub Actions. A scheduled workflow also downloads the public Google Sheet and redeploys fresh data every day at 07:30 UTC.
+Every push to `main` builds and deploys the static website through GitHub Actions. Scheduled builds download the public Google Sheet at 07:30 UTC, with a second attempt at 13:30 UTC if GitHub skips or delays the morning schedule.
 
 The intended custom domain is `smb1ecl.loopie.fr`.
 
