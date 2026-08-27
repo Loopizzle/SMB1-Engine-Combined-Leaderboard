@@ -95,9 +95,9 @@ def monthly_board_key(board_key):
     return "|".join((parts[0], parts[1], parts[2], "|".join(parts[4:])))
 
 
-def historical_monthly_winners(sheet, boards, games):
+def historical_monthly_history(sheet, boards, games):
     if sheet is None:
-        return []
+        return [], []
 
     enabled_games = {str(game.get("abbr")): bool(game.get("included")) for game in games}
     board_index = {}
@@ -175,34 +175,52 @@ def historical_monthly_winners(sheet, boards, games):
         stat["boards"].add(run["boardKey"])
         stat["games"].add(run["gameId"])
 
-    champions = {}
+    players_by_month = {}
     for (month, _), stat in stats.items():
         volume = math.sqrt(stat["runs"]) * 8
         variety = max(0, len(stat["games"]) - 1) * 10
-        row = {
-            "Month": month,
-            "Winner": stat["runner"],
-            "Flag": None,
-            "Country": stat["country"],
-            "Total Score": round2(stat["performance"] + stat["runs"] + volume + variety),
-            "Performance Score": round2(stat["performance"]),
-            "Verified Runs": stat["runs"],
-            "Volume Bonus": round2(volume),
-            "Variety Bonus": round2(variety),
-            "Unique Boards": len(stat["boards"]),
-            "Unique Games": len(stat["games"]),
-            "Profile": stat["profile"],
-        }
-        current = champions.get(month)
-        ordering = (row["Total Score"], row["Performance Score"], row["Verified Runs"], row["Unique Boards"], row["Winner"])
-        if current is None:
-            champions[month] = (ordering, row)
-            continue
-        current_ordering = current[0]
-        if ordering[:4] > current_ordering[:4] or (ordering[:4] == current_ordering[:4] and ordering[4] < current_ordering[4]):
-            champions[month] = (ordering, row)
+        players_by_month.setdefault(month, []).append({
+            "runner": stat["runner"],
+            "country": stat["country"],
+            "totalScore": round2(stat["performance"] + stat["runs"] + volume + variety),
+            "performanceScore": round2(stat["performance"]),
+            "runs": stat["runs"],
+            "volumeBonus": round2(volume),
+            "varietyBonus": round2(variety),
+            "uniqueBoards": len(stat["boards"]),
+            "uniqueGames": len(stat["games"]),
+            "profile": stat["profile"],
+        })
 
-    return [champions[month][1] for month in sorted(champions)]
+    rows = []
+    winners = []
+    for month in sorted(players_by_month):
+        players = sorted(players_by_month[month], key=lambda player: (
+            -player["totalScore"],
+            -player["performanceScore"],
+            -player["runs"],
+            -player["uniqueBoards"],
+            player["runner"],
+        ))
+        for rank, player in enumerate(players, start=1):
+            rows.append({"month": month, "rank": rank, **player})
+        champion = players[0]
+        winners.append({
+            "Month": month,
+            "Winner": champion["runner"],
+            "Flag": None,
+            "Country": champion["country"],
+            "Total Score": champion["totalScore"],
+            "Performance Score": champion["performanceScore"],
+            "Verified Runs": champion["runs"],
+            "Volume Bonus": champion["volumeBonus"],
+            "Variety Bonus": champion["varietyBonus"],
+            "Unique Boards": champion["uniqueBoards"],
+            "Unique Games": champion["uniqueGames"],
+            "Profile": champion["profile"],
+        })
+
+    return rows, winners
 
 
 def flag_url(formula):
@@ -406,7 +424,14 @@ def extract_payload(workbook_path):
                 "profile": row[38],
             })
 
-        archived_monthly_winners = historical_monthly_winners(values["Yearly Data"], boards, games) if "Yearly Data" in values.sheetnames else []
+        archived_monthly, archived_monthly_winners = historical_monthly_history(values["Yearly Data"], boards, games) if "Yearly Data" in values.sheetnames else ([], [])
+        current_months = {str(row.get("month") or "")[:7] for row in monthly}
+        monthly = [
+            row for row in archived_monthly
+            if str(row.get("month") or "")[:7] not in current_months
+        ] + monthly
+        monthly.sort(key=lambda row: (str(row.get("month") or "")[:7], int(row.get("rank") or 0)))
+
         current_monthly_winners = dictionaries(rows_from(values["Monthly Winners"]))
         monthly_winners_by_period = {
             str(row.get("Month") or "")[:7]: row
