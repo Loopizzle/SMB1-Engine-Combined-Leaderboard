@@ -1,6 +1,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import math
 import os
 import re
 import tempfile
@@ -24,6 +25,7 @@ REQUIRED_SHEETS = (
     "Yearly Winners",
     "About",
 )
+MONTHLY_CHAMPION_START = "2015-01"
 
 
 def rows_from(sheet, start=1):
@@ -51,6 +53,156 @@ def dictionaries(rows):
 
 def compact(item, field_map):
     return {target: item.get(source) for source, target in field_map.items()}
+
+
+def round2(value):
+    return math.floor(float(value) * 100 + 0.5) / 100
+
+
+def placement_strength(place, board_size):
+    if place <= 0 or board_size <= 0:
+        return 0
+    if board_size == 1:
+        return 1 if place == 1 else 0
+    return max(0, 1 - ((place - 1) / max(1, board_size - 1)))
+
+
+def board_weight(board_size):
+    return math.pow(math.log2(board_size + 1), 1.35) if board_size > 0 else 0
+
+
+def monthly_performance_score(place, monthly_runs, current_board_size):
+    strength = placement_strength(place, monthly_runs)
+    if strength <= 0:
+        return 0
+    depth = max(current_board_size, monthly_runs)
+    weight = max(1, board_weight(depth))
+    competition = math.log2(monthly_runs + 1)
+    score = math.pow(strength, 1.5) * weight * max(1, competition) * 2
+    if place == 1:
+        score += weight * 1.5
+    elif place == 2:
+        score += weight * 0.8
+    elif place == 3:
+        score += weight * 0.4
+    return score
+
+
+def monthly_board_key(board_key):
+    parts = str(board_key or "").split("|")
+    if len(parts) < 5:
+        return ""
+    return "|".join((parts[0], parts[1], parts[2], "|".join(parts[4:])))
+
+
+def historical_monthly_winners(sheet, boards, games):
+    if sheet is None:
+        return []
+
+    enabled_games = {str(game.get("abbr")): bool(game.get("included")) for game in games}
+    board_index = {}
+    for board in boards:
+        key = monthly_board_key(board.get("boardKey"))
+        if not key:
+            continue
+        abbreviation = str(board.get("gameAbbr") or "")
+        values = str(board.get("subcategory") or "")
+        toggle = f"{abbreviation} (Luigi)" if abbreviation in {"annsmb", "smbtll", "smbtllce"} and re.search(r"\bluigi\b", values, re.IGNORECASE) else abbreviation
+        board_index[key] = {
+            "included": bool(board.get("included")),
+            "gameToggle": toggle,
+            "runCount": int(board.get("runCount") or 0),
+        }
+
+    history = dictionaries(rows_from(sheet))
+    runs = []
+    for item in history:
+        month = str(item.get("Verified At") or "")[:7]
+        run_id = str(item.get("Run ID") or "")
+        player_key = str(item.get("Player Key") or "")
+        board_key = str(item.get("Board Key") or "")
+        seconds = item.get("Seconds")
+        if month < MONTHLY_CHAMPION_START or not re.fullmatch(r"\d{4}-\d{2}", month):
+            continue
+        if not run_id or not player_key or not board_key or seconds in (None, ""):
+            continue
+        board = board_index.get(board_key)
+        if board and (not board["included"] or not enabled_games.get(board["gameToggle"], True)):
+            continue
+        runs.append({
+            "month": month,
+            "runId": run_id,
+            "playerKey": player_key,
+            "runner": str(item.get("Runner") or player_key),
+            "country": str(item.get("Country") or ""),
+            "profile": str(item.get("Profile") or ""),
+            "boardKey": board_key,
+            "gameId": str(item.get("Game ID") or board_key.split("|", 1)[0]),
+            "seconds": float(seconds),
+        })
+
+    board_runs = {}
+    for run in runs:
+        group = board_runs.setdefault((run["month"], run["boardKey"]), {})
+        group.setdefault(run["runId"], run)
+
+    performance = {}
+    for (_, board_key), group in board_runs.items():
+        ranked = sorted(group.values(), key=lambda run: (run["seconds"], run["runId"]))
+        current_size = board_index.get(board_key, {}).get("runCount", len(ranked))
+        for index, run in enumerate(ranked, start=1):
+            performance[run["runId"]] = monthly_performance_score(index, len(ranked), current_size)
+
+    stats = {}
+    seen = set()
+    for run in runs:
+        dedupe_key = (run["runId"], run["playerKey"])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        key = (run["month"], run["playerKey"])
+        stat = stats.setdefault(key, {
+            "runner": run["runner"],
+            "country": run["country"],
+            "profile": run["profile"],
+            "performance": 0,
+            "runs": 0,
+            "boards": set(),
+            "games": set(),
+        })
+        stat["performance"] += performance.get(run["runId"], 0)
+        stat["runs"] += 1
+        stat["boards"].add(run["boardKey"])
+        stat["games"].add(run["gameId"])
+
+    champions = {}
+    for (month, _), stat in stats.items():
+        volume = math.sqrt(stat["runs"]) * 8
+        variety = max(0, len(stat["games"]) - 1) * 10
+        row = {
+            "Month": month,
+            "Winner": stat["runner"],
+            "Flag": None,
+            "Country": stat["country"],
+            "Total Score": round2(stat["performance"] + stat["runs"] + volume + variety),
+            "Performance Score": round2(stat["performance"]),
+            "Verified Runs": stat["runs"],
+            "Volume Bonus": round2(volume),
+            "Variety Bonus": round2(variety),
+            "Unique Boards": len(stat["boards"]),
+            "Unique Games": len(stat["games"]),
+            "Profile": stat["profile"],
+        }
+        current = champions.get(month)
+        ordering = (row["Total Score"], row["Performance Score"], row["Verified Runs"], row["Unique Boards"], row["Winner"])
+        if current is None:
+            champions[month] = (ordering, row)
+            continue
+        current_ordering = current[0]
+        if ordering[:4] > current_ordering[:4] or (ordering[:4] == current_ordering[:4] and ordering[4] < current_ordering[4]):
+            champions[month] = (ordering, row)
+
+    return [champions[month][1] for month in sorted(champions)]
 
 
 def flag_url(formula):
@@ -254,6 +406,22 @@ def extract_payload(workbook_path):
                 "profile": row[38],
             })
 
+        archived_monthly_winners = historical_monthly_winners(values["Yearly Data"], boards, games) if "Yearly Data" in values.sheetnames else []
+        current_monthly_winners = dictionaries(rows_from(values["Monthly Winners"]))
+        monthly_winners_by_period = {
+            str(row.get("Month") or "")[:7]: row
+            for row in archived_monthly_winners
+        }
+        # The cache is complete for older years, while the visible sheet has the
+        # authoritative current months gathered by the latest Apps Script refresh.
+        for row in current_monthly_winners:
+            monthly_winners_by_period[str(row.get("Month") or "")[:7]] = row
+        monthly_winners = [
+            monthly_winners_by_period[period]
+            for period in sorted(monthly_winners_by_period)
+            if period
+        ]
+
         return {
             "generatedFrom": "The SMB1 Engine Combined Leaderboard public workbook",
             "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -263,7 +431,7 @@ def extract_payload(workbook_path):
             "games": games,
             "monthly": monthly,
             "yearly": yearly,
-            "monthlyWinners": dictionaries(rows_from(values["Monthly Winners"])),
+            "monthlyWinners": monthly_winners,
             "yearlyWinners": dictionaries(rows_from(values["Yearly Winners"])),
             "about": dictionaries(rows_from(values["About"])),
         }
