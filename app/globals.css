@@ -294,6 +294,8 @@ tbody tr:hover td { background:#292e32; }
   .view-toolbar .segmented { flex:1 1 0; }
   .view-toolbar .segmented button { min-width:0; flex:1; }
   .view-toolbar>select { flex:1 1 0; min-width:0; max-width:none; }
+  .history-toolbar .segmented { flex-basis:100%; }
+  .history-toolbar>select { flex-basis:calc(50% - 4px); }
   .view-toolbar>.search-box+select { flex-basis:100%; width:100%; }
   .result-count,.view-toolbar>p { display:none; }
   .table-scroll { max-height:none; min-height:360px; }
