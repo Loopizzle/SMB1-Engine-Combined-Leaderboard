@@ -5,7 +5,6 @@ import { BarChart3, CalendarDays, Clock3, Crown, FlaskConical, Gauge, Map as Map
 import {
   baseGameKey,
   careerRace,
-  dynastyTable,
   eligibleBoardsForRunner,
   eligibleSetupsForRunner,
   engineSeason,
@@ -25,11 +24,11 @@ import {
   targetInstruction,
   type InsightBoard,
   type InsightCareerRun,
-  type InsightHistoryRow,
   type InsightPlayer,
   type InsightRun,
   type RaceMetric,
 } from './insights';
+import { archiveYears, historicalImpact } from './history-analytics';
 
 type LabMode = 'simulator' | 'milestones' | 'momentum' | 'timeline' | 'map' | 'hall' | 'seasons';
 type Scenario = { boardKey: string; time: string; setupKey: string };
@@ -72,12 +71,12 @@ function RunnerSearch({ players, value, onChange, label = 'Runner' }: { players:
   return <label className="lab-runner-field"><span>{label}</span><div className="lab-runner-input"><Search size={16} /><input value={shownValue} onFocus={() => { setOpen(true); setQuery(''); }} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onBlur={() => setTimeout(() => setOpen(false), 120)} placeholder="Search runners" />{open && <div className="lab-runner-results">{matches.map((player) => <button type="button" key={player.Runner} onMouseDown={(event) => { event.preventDefault(); onChange(player.Runner); setQuery(player.Runner); setOpen(false); }}><FlagChip url={player['Flag URL']} /><span><strong>{player.Runner}</strong><small>{player.Country || 'Unlisted country'}</small></span><em>#{player.Rank}</em></button>)}{!matches.length && <p>No runners found.</p>}</div>}</div></label>;
 }
 
-export default function InsightsLab({ players, runs, careerRuns, boards, yearly, gameNames, openProfile }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; yearly: InsightHistoryRow[]; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
+export default function InsightsLab({ players, runs, careerRuns, boards, gameNames, openProfile }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
   const [mode, setMode] = useState<LabMode>('simulator');
   const [runner, setRunner] = useState(players[0]?.Runner || '');
   const selected = players.find((player) => player.Runner === runner) || players[0] || null;
 
-  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} careerRuns={careerRuns} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <Dynasties rows={yearly} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
+  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} careerRuns={careerRuns} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <AgainstTheirTime careerRuns={careerRuns} players={players} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
 }
 
 function displayDate(value: string | null) {
@@ -259,22 +258,31 @@ function EngineMap({ player, players, runs, boards, runner, setRunner, gameNames
   return <div className="lab-stack"><section className="lab-band map-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Map for" /><div className="map-game-tabs">{games.map((item) => <button className={(games.includes(game) ? game : games[0]) === item ? 'active' : ''} key={item} onClick={() => { setGame(item); setSelectedKey(''); }}>{gameNames[item] || item}</button>)}</div></section><section className="lab-panel engine-map-panel"><div className="map-summary"><div><span>Conquered</span><strong>{conquered}/{shownBoards.length}</strong></div><div><span>Medals</span><strong>{medals}</strong></div><div><span>World records</span><strong>{records}</strong></div></div><div className="engine-map-grid">{shownBoards.map((board, index) => { const run = own.get(board.boardKey); const state = !run ? 'missing' : run.place === 1 ? 'wr' : run.place <= 3 ? 'medal' : 'ranked'; return <button className={`map-node ${state} ${selectedBoard?.boardKey === board.boardKey ? 'selected' : ''}`} key={board.boardKey} onClick={() => setSelectedKey(board.boardKey)}><span>{index + 1}</span><strong>{board.category}</strong><small>{[board.level, board.subcategory].filter(Boolean).join(' - ') || board.game}</small><em>{run ? `#${run.place}` : '?'}</em></button>; })}</div>{selectedBoard && <div className="map-detail"><span>{gameNames[selectedBoard.gameAbbr] || selectedBoard.gameAbbr}</span><strong>{insightBoardLabel(selectedBoard)}</strong><p>{selectedRun ? `${player.Runner} is #${selectedRun.place} of ${selectedRun.boardSize} with ${fmt(selectedRun.performancePoints, 2)} performance points.` : `${player.Runner} has not submitted to this ${selectedBoard.runCount}-runner board.`}</p></div>}</section></div>;
 }
 
-function Dynasties({ rows, openProfile }: { rows: InsightHistoryRow[]; openProfile: (runner: string) => void }) {
-  const availableYears = useMemo(() => Array.from(new Set(rows.map((row) => Number(row.year || 0)).filter((year) => year >= 2015))).sort((a, b) => a - b), [rows]);
+function AgainstTheirTime({ careerRuns, players, openProfile }: { careerRuns: InsightCareerRun[]; players: InsightPlayer[]; openProfile: (runner: string) => void }) {
+  const availableYears = useMemo(() => archiveYears(careerRuns), [careerRuns]);
   const firstYear = availableYears[0] || 2015;
   const lastYear = availableYears.at(-1) || new Date().getUTCFullYear();
   const [range, setRange] = useState({ start: firstYear, end: lastYear });
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    setRange((current) => availableYears.includes(current.start) && availableYears.includes(current.end) ? current : { start: firstYear, end: lastYear });
+  }, [availableYears, firstYear, lastYear]);
   const start = Math.min(range.start, range.end);
   const end = Math.max(range.start, range.end);
-  const years = availableYears.filter((year) => year >= start && year <= end);
-  const careers = useMemo(() => dynastyTable(rows, start, end).slice(0, 35), [end, rows, start]);
-  const champions = years.map((year) => rows.find((row) => Number(row.year) === year && Number(row.rank) === 1));
-  const gridTemplate = `minmax(170px,1.3fr) repeat(${Math.max(1, years.length)}, minmax(62px,.55fr)) minmax(155px,1fr)`;
+  const standings = useMemo(() => historicalImpact(careerRuns, players, start, end), [careerRuns, end, players, start]);
+  const needle = query.trim().toLocaleLowerCase();
+  const shown = standings.filter((entry) => !needle || entry.runner.toLocaleLowerCase().includes(needle)).slice(0, 100);
+  const leader = standings[0];
+  const crownMonths = standings.reduce((sum, entry) => sum + entry.wrMonths, 0);
   return <div className="lab-stack">
-    <section className="lab-band dynasty-toolbar"><div><span>Explore an era</span><strong>{start}–{end}</strong><small>Sorted by titles, then podiums, then top-10 seasons</small></div><label><span>From</span><select value={range.start} onChange={(event) => setRange((current) => ({ ...current, start: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label><label><span>Through</span><select value={range.end} onChange={(event) => setRange((current) => ({ ...current, end: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label></section>
-    <section className="lab-panel dynasty-panel"><div className="lab-panel-title"><div><span>Dynasties</span><h3>Titles and staying power, year by year</h3></div><Crown size={22} /></div><p className="lab-explainer">There is no hidden career rating. Gold means yearly champion, silver and bronze mean podium finishes, and every cell states the runner&apos;s actual yearly rank. The percentage shows performance relative to that year&apos;s leader.</p>
-      <div className="champion-belt">{champions.map((champion, index) => <button key={years[index]} disabled={!champion} onClick={() => champion && openProfile(champion.runner)}><span>{years[index]}</span><strong>{champion?.runner || 'No data'}</strong><small>{champion ? `${fmt(champion.performanceScore, 1)} performance` : '-'}</small></button>)}</div>
-      <div className="dynasty-scroll"><div className="dynasty-matrix"><div className="dynasty-head" style={{ gridTemplateColumns: gridTemplate }}><span>Runner</span>{years.map((year) => <span key={year}>{year}</span>)}<span>Accomplishments</span></div>{careers.map((career, careerIndex) => <div className="dynasty-row" style={{ gridTemplateColumns: gridTemplate }} key={career.runner}><button className="dynasty-runner" onClick={() => openProfile(career.runner)}><span>{careerIndex + 1}</span><strong>{career.runner}<small>{career.appearances} active year{career.appearances === 1 ? '' : 's'}</small></strong></button>{years.map((year) => { const season = career.seasons.get(year); const state = !season ? 'empty' : season.rank === 1 ? 'title' : season.rank === 2 ? 'silver' : season.rank === 3 ? 'bronze' : season.rank <= 10 ? 'top10' : 'active'; return <button className={`dynasty-cell ${state}`} disabled={!season} title={season ? `${career.runner}: #${season.rank} in ${year}, ${fmt(season.leaderShare, 1)}% of the leader's performance` : `${career.runner}: no scored season in ${year}`} key={year}>{season ? <><strong>#{season.rank}</strong><small>{fmt(season.leaderShare)}%</small></> : <span>–</span>}</button>; })}<div className="dynasty-summary"><strong>{career.titles} title{career.titles === 1 ? '' : 's'}</strong><span>{career.podiums} podium{career.podiums === 1 ? '' : 's'} · {career.top10s} top-10{career.top10s === 1 ? '' : 's'}</span></div></div>)}</div></div>
+    <section className="lab-band impact-toolbar"><div><span>Historical impact</span><strong>{start}–{end}</strong><small>Performed dates, accepted archive, same performance formula as Ranks</small></div><label><span>From</span><select value={range.start} onChange={(event) => setRange((current) => ({ ...current, start: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label><label><span>Through</span><select value={range.end} onChange={(event) => setRange((current) => ({ ...current, end: Number(event.target.value) }))}>{availableYears.map((year) => <option key={year}>{year}</option>)}</select></label></section>
+    <section className="lab-panel impact-panel"><div className="lab-panel-title"><div><span>Dynasties</span><h3>Against Their Time</h3></div><Crown size={22} /></div><p className="lab-explainer">At every month-end, each runner&apos;s best accepted time on every board is ranked against the field that existed then. Those placement-and-depth scores are added and divided by 12, so one full year at a level equals one current-score year. This measures historical impact, not current strength.</p>
+      <div className="impact-summary"><article><span>Era leader</span><strong>{leader?.runner || 'No data'}</strong><small>{fmt(leader?.impactScore || 0, 1)} impact</small></article><article><span>WR board-months</span><strong>{fmt(crownMonths)}</strong><small>Shared records count for every holder</small></article><article><span>Archive range</span><strong>{start}–{end}</strong><small>{standings.length} runners scored</small></article></div>
+      <div className="impact-search"><label><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a runner" /></label><span>Showing {shown.length} of {standings.length}</span></div>
+      <div className="impact-table"><div className="impact-head"><span>Rank</span><span>Runner</span><span>Impact</span><span>WR board-months</span><span>Podium board-months</span><span>Top-10 board-months</span><span>Peak year</span></div>{shown.map((entry) => {
+        const trueRank = standings.indexOf(entry) + 1;
+        return <button key={entry.playerKey} onClick={() => openProfile(entry.runner)}><span className="impact-rank">{trueRank}</span><span className="impact-runner"><FlagChip url={entry.flagUrl} /><strong>{entry.runner}<small>{entry.country || 'Unlisted country'} · active {entry.firstPeriod.slice(0, 4)}–{entry.lastPeriod.slice(0, 4)} · peak {entry.peakYear}</small></strong></span><b>{fmt(entry.impactScore, 1)}</b><span>{fmt(entry.wrMonths)}</span><span>{fmt(entry.podiumMonths)}</span><span>{fmt(entry.top10Months)}</span><em>{entry.peakYear}<small>{fmt(entry.peakYearScore, 1)} impact</small></em></button>;
+      })}</div>
     </section>
   </div>;
 }
