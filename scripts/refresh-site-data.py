@@ -288,6 +288,39 @@ def historical_career_runs(sheet, boards):
     return result
 
 
+def merge_current_career_runs(career_runs, current_runs):
+    merged = list(career_runs)
+    seen = {
+        (str(run.get("id") or ""), str(run.get("playerKey") or ""))
+        for run in merged
+    }
+    for run in current_runs:
+        identity = (str(run.get("id") or ""), str(run.get("playerKey") or ""))
+        if not all(identity) or identity in seen:
+            continue
+        seen.add(identity)
+        merged.append({
+            "id": run["id"],
+            "playerKey": run["playerKey"],
+            "runner": run["runner"],
+            "country": run.get("country") or "",
+            "profile": run.get("profile") or "",
+            "boardKey": run["boardKey"],
+            "gameAbbr": run["gameAbbr"],
+            "gameToggle": run["gameToggle"],
+            "game": run.get("game") or run["gameAbbr"],
+            "scope": run.get("scope") or "Full Game",
+            "category": run["category"],
+            "level": run.get("level"),
+            "subcategory": run.get("subcategory"),
+            "seconds": float(run["seconds"]),
+            "runDate": run.get("runDate") or (run.get("verifiedAt") or "")[:10] or None,
+            "verifiedAt": run.get("verifiedAt"),
+            "runLink": run.get("runLink") or "",
+        })
+    return merged
+
+
 def flag_url(formula):
     if not isinstance(formula, str):
         return None
@@ -497,7 +530,8 @@ def extract_payload(workbook_path):
 
         history_sheet = values["Yearly Data"] if "Yearly Data" in values.sheetnames else None
         archived_monthly, archived_monthly_winners = historical_monthly_history(history_sheet, boards, games)
-        career_runs = historical_career_runs(history_sheet, boards) if history_sheet is not None else runs
+        archived_career_runs = historical_career_runs(history_sheet, boards) if history_sheet is not None else []
+        career_runs = merge_current_career_runs(archived_career_runs, runs)
         current_months = {str(row.get("month") or "")[:7] for row in monthly}
         monthly = [
             row for row in archived_monthly
