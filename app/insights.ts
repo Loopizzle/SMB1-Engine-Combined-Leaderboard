@@ -1,6 +1,7 @@
 export type InsightPlayer = {
   Rank: number;
   Runner: string;
+  playerKey?: string;
   Country: string | null;
   'Flag URL': string | null;
   'Total Score': number;
@@ -35,6 +36,23 @@ export type InsightRun = {
   platform: string | null;
   hardware: string | null;
   verifiedAt?: string | null;
+};
+
+export type InsightCareerRun = {
+  id?: string;
+  runner: string;
+  playerKey: string;
+  boardKey: string;
+  gameAbbr: string;
+  gameToggle: string;
+  category: string;
+  level: string | null;
+  subcategory: string | null;
+  seconds: number;
+  runDate: string | null;
+  country?: string | null;
+  verifiedAt?: string | null;
+  time?: string;
 };
 
 export type InsightBoard = {
@@ -147,7 +165,7 @@ export type CareerSnapshot = {
   boards: number;
   games: number;
   wrs: number;
-  newRuns: InsightRun[];
+  newRuns: InsightCareerRun[];
 };
 
 export type RaceMetric = 'score' | 'performance' | 'runs' | 'games';
@@ -674,12 +692,13 @@ export function engineSeason(runs: InsightRun[], players: InsightPlayer[], year:
   const countryByRunner = new Map(players.map((player) => [player.Runner, player.Country]));
   const monthGroups = new Map<string, Map<string, InsightRun[]>>();
   for (const run of runs) {
+    const runner = String(run.runner || '').trim();
     const period = String(run.runDate || '').slice(0, 7);
-    if (!/^\d{4}-\d{2}$/.test(period) || Number(period.slice(0, 4)) !== year) continue;
+    if (!runner || !/^\d{4}-\d{2}$/.test(period) || Number(period.slice(0, 4)) !== year) continue;
     const runners = monthGroups.get(period) || new Map<string, InsightRun[]>();
-    const runnerRuns = runners.get(run.runner) || [];
+    const runnerRuns = runners.get(runner) || [];
     runnerRuns.push(run);
-    runners.set(run.runner, runnerRuns);
+    runners.set(runner, runnerRuns);
     monthGroups.set(period, runners);
   }
   const groups = new Map<string, { country: string | null; points: number; wins: number; podiums: number; ranks: number[] }>();
@@ -688,7 +707,7 @@ export function engineSeason(runs: InsightRun[], players: InsightPlayer[], year:
       const performance = runnerRuns.reduce((sum, run) => sum + Number(run.performancePoints || 0), 0);
       const games = new Set(runnerRuns.map((run) => baseGameKey(run.gameToggle || run.gameAbbr))).size;
       return { runner, score: performance + Math.sqrt(runnerRuns.length) * 8 + Math.max(0, games - 1) * 10 };
-    }).sort((a, b) => b.score - a.score || a.runner.localeCompare(b.runner));
+    }).sort((a, b) => b.score - a.score || String(a.runner).localeCompare(String(b.runner)));
     monthly.forEach((row, index) => {
       const rank = index + 1;
       const current = groups.get(row.runner) || { country: countryByRunner.get(row.runner) || null, points: 0, wins: 0, podiums: 0, ranks: [] };
@@ -720,57 +739,113 @@ export function runnerCareerSnapshots(player: InsightPlayer, runs: InsightRun[])
   });
 }
 
-export function careerRace(players: InsightPlayer[], runs: InsightRun[], selectedRunners: string[], startYear = 2015, now = new Date()): { periods: string[]; series: CareerRaceSeries[] } {
+function careerIdentity(playerKey: string | undefined, runner: string) {
+  const key = String(playerKey || '').trim();
+  return key ? `key:${key}` : `runner:${String(runner || '').trim().toLocaleLowerCase()}`;
+}
+
+export function careerRace(players: InsightPlayer[], runs: InsightCareerRun[], selectedRunners: string[], startYear = 2015, now = new Date()): { periods: string[]; series: CareerRaceSeries[] } {
   const periods: string[] = [];
   for (let year = startYear; year <= now.getUTCFullYear(); year += 1) {
     const finalMonth = year === now.getUTCFullYear() ? now.getUTCMonth() + 1 : 12;
     for (let month = 1; month <= finalMonth; month += 1) periods.push(`${year}-${String(month).padStart(2, '0')}`);
   }
 
-  type MutableCareer = { performance: number; runs: InsightRun[]; boards: Set<string>; games: Set<string>; wrs: number };
-  const byPeriod = new Map<string, InsightRun[]>();
+  const periodSet = new Set(periods);
+  const playerByName = new Map(players.map((player) => [String(player.Runner), player]));
+  const playerByIdentity = new Map(players.map((player) => [careerIdentity(player.playerKey, String(player.Runner)), player]));
+  const selected = selectedRunners.map((runner) => {
+    const player = playerByName.get(String(runner));
+    return { runner: String(runner), player, identity: careerIdentity(player?.playerKey, String(runner)) };
+  });
+  const byPeriod = new Map<string, InsightCareerRun[]>();
   for (const run of runs) {
+    const runner = String(run.runner || '').trim();
     const period = String(run.runDate || '').slice(0, 7);
-    if (!periods.includes(period)) continue;
+    if (!runner || !periodSet.has(period) || !run.boardKey || Number(run.seconds || 0) <= 0) continue;
     const list = byPeriod.get(period) || [];
-    list.push(run);
+    list.push({ ...run, runner, playerKey: String(run.playerKey || '') });
     byPeriod.set(period, list);
   }
 
+  type MutableCareer = { runner: string; performance: number; runs: Map<string, InsightCareerRun>; games: Set<string>; wrs: number };
+  type BoardScore = { performance: number; wr: number };
   const states = new Map<string, MutableCareer>();
-  const pointsByRunner = new Map(selectedRunners.map((runner) => [runner, [] as CareerRacePoint[]]));
+  const boardRuns = new Map<string, Map<string, InsightCareerRun>>();
+  const boardScores = new Map<string, Map<string, BoardScore>>();
+  const pointsByRunner = new Map(selected.map((item) => [item.runner, [] as CareerRacePoint[]]));
   const previousScore = new Map<string, number>();
+
+  function stateFor(identity: string, run: InsightCareerRun) {
+    const current = states.get(identity);
+    if (current) return current;
+    const player = playerByIdentity.get(identity);
+    const created = { runner: String(player?.Runner || run.runner), performance: 0, runs: new Map<string, InsightCareerRun>(), games: new Set<string>(), wrs: 0 };
+    states.set(identity, created);
+    return created;
+  }
+
   for (const period of periods) {
     const additions = byPeriod.get(period) || [];
+    const touchedBoards = new Set<string>();
     for (const run of additions) {
-      const state = states.get(run.runner) || { performance: 0, runs: [], boards: new Set<string>(), games: new Set<string>(), wrs: 0 };
-      state.performance += Number(run.performancePoints || 0);
-      state.runs.push(run);
-      state.boards.add(run.boardKey);
-      state.games.add(baseGameKey(run.gameToggle || run.gameAbbr));
-      state.wrs += Number(run.wrCredit || 0);
-      states.set(run.runner, state);
+      const identity = careerIdentity(run.playerKey, run.runner);
+      const state = stateFor(identity, run);
+      const entries = boardRuns.get(run.boardKey) || new Map<string, InsightCareerRun>();
+      const existing = entries.get(identity);
+      if (!existing || Number(run.seconds) < Number(existing.seconds) - 0.0005) {
+        entries.set(identity, run);
+        boardRuns.set(run.boardKey, entries);
+        state.runs.set(run.boardKey, run);
+        state.games.add(baseGameKey(run.gameToggle || run.gameAbbr));
+        touchedBoards.add(run.boardKey);
+      }
     }
-    const scoreByRunner = Array.from(states.entries()).map(([runner, state]) => ({ runner, score: state.performance + Math.sqrt(state.runs.length) * 8 + Math.max(0, state.games.size - 1) * 10 })).sort((a, b) => b.score - a.score || String(a.runner).localeCompare(String(b.runner)));
-    const rankByRunner = new Map(scoreByRunner.map((item, index) => [item.runner, index + 1]));
-    for (const runner of selectedRunners) {
-      const state = states.get(runner);
+
+    for (const boardKey of touchedBoards) {
+      for (const [identity, oldScore] of boardScores.get(boardKey) || []) {
+        const state = states.get(identity);
+        if (!state) continue;
+        state.performance = Math.max(0, state.performance - oldScore.performance);
+        state.wrs = Math.max(0, state.wrs - oldScore.wr);
+      }
+      const ranked = Array.from(boardRuns.get(boardKey) || []).sort((a, b) => Number(a[1].seconds) - Number(b[1].seconds) || a[0].localeCompare(b[0]));
+      const scores = new Map<string, BoardScore>();
+      let previousSeconds = -1;
+      let previousPlace = 0;
+      ranked.forEach(([identity, run], index) => {
+        const seconds = Number(run.seconds);
+        const place = index > 0 && Math.abs(seconds - previousSeconds) <= 0.0005 ? previousPlace : index + 1;
+        const score = { performance: runPerformanceScore(place, ranked.length), wr: place === 1 ? 1 : 0 };
+        const state = states.get(identity)!;
+        state.performance += score.performance;
+        state.wrs += score.wr;
+        scores.set(identity, score);
+        previousSeconds = seconds;
+        previousPlace = place;
+      });
+      boardScores.set(boardKey, scores);
+    }
+
+    const scoreByRunner = Array.from(states.entries()).map(([identity, state]) => ({ identity, runner: state.runner, score: state.performance + Math.sqrt(state.runs.size) * 8 + Math.max(0, state.games.size - 1) * 10 })).sort((a, b) => b.score - a.score || a.runner.localeCompare(b.runner));
+    const rankByRunner = new Map(scoreByRunner.map((item, index) => [item.identity, index + 1]));
+    for (const item of selected) {
+      const state = states.get(item.identity);
       const performance = state?.performance || 0;
-      const runCount = state?.runs.length || 0;
+      const runCount = state?.runs.size || 0;
       const games = state?.games.size || 0;
       const volume = Math.sqrt(runCount) * 8;
       const variety = Math.max(0, games - 1) * 10;
       const score = performance + volume + variety;
-      const newRuns = additions.filter((run) => run.runner === runner).sort((a, b) => b.performancePoints - a.performancePoints);
-      const list = pointsByRunner.get(runner)!;
-      list.push({ period, score, scoreGain: score - (previousScore.get(runner) || 0), performance, volume, variety, runs: runCount, boards: state?.boards.size || 0, games, wrs: state?.wrs || 0, newRuns, fieldRank: rankByRunner.get(runner) || 0 });
-      previousScore.set(runner, score);
+      const newRuns = additions.filter((run) => careerIdentity(run.playerKey, run.runner) === item.identity).sort((a, b) => String(a.runDate || '').localeCompare(String(b.runDate || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+      const list = pointsByRunner.get(item.runner)!;
+      list.push({ period, score, scoreGain: score - (previousScore.get(item.runner) || 0), performance, volume, variety, runs: runCount, boards: runCount, games, wrs: state?.wrs || 0, newRuns, fieldRank: rankByRunner.get(item.identity) || 0 });
+      previousScore.set(item.runner, score);
     }
   }
 
-  const playerMap = new Map(players.map((player) => [player.Runner, player]));
   return {
     periods,
-    series: selectedRunners.map((runner) => ({ runner, country: playerMap.get(runner)?.Country || null, flagUrl: playerMap.get(runner)?.['Flag URL'] || null, points: pointsByRunner.get(runner) || [] })),
+    series: selected.map(({ runner, player }) => ({ runner, country: player?.Country || null, flagUrl: player?.['Flag URL'] || null, points: pointsByRunner.get(runner) || [] })),
   };
 }
