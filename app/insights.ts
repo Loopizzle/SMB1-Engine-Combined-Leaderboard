@@ -34,6 +34,7 @@ export type InsightRun = {
   country: string | null;
   platform: string | null;
   hardware: string | null;
+  verifiedAt?: string | null;
 };
 
 export type InsightBoard = {
@@ -178,6 +179,31 @@ export type RankChasePlan = {
   remainingGap: number;
   reached: boolean;
   steps: RankChaseStep[];
+};
+
+export type MomentumEntry = {
+  runner: string;
+  country: string | null;
+  flagUrl: string | null;
+  rank: number;
+  totalScore: number;
+  scoreGain: number;
+  performanceGain: number;
+  volumeGain: number;
+  varietyGain: number;
+  recentRuns: number;
+  recentBoards: number;
+  recentGames: number;
+  rankBefore: number;
+  rankShift: number;
+  latestDate: string | null;
+  undatedRuns: number;
+};
+
+export type MomentumReport = {
+  days: number;
+  asOf: string | null;
+  entries: MomentumEntry[];
 };
 
 export function baseGameKey(value: string) {
@@ -545,6 +571,67 @@ export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], r
     reached: projection.score >= targetScore,
     steps,
   };
+}
+
+function activityMillis(run: InsightRun) {
+  const value = run.verifiedAt || run.runDate;
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function portfolioParts(runs: InsightRun[]) {
+  const games = new Set(runs.map((run) => baseGameKey(run.gameToggle || run.gameAbbr)));
+  const performance = runs.reduce((sum, run) => sum + Number(run.performancePoints || 0), 0);
+  const volume = Math.sqrt(runs.length) * 8;
+  const variety = Math.max(0, games.size - 1) * 10;
+  return { performance, volume, variety, total: performance + volume + variety, games };
+}
+
+export function momentumReport(players: InsightPlayer[], runs: InsightRun[], days = 90, now?: Date): MomentumReport {
+  const datedRuns = runs.map((run) => ({ run, millis: activityMillis(run) })).filter((item) => item.millis > 0);
+  const latestMillis = now?.getTime() || Math.max(...datedRuns.map((item) => item.millis), 0);
+  const runsByRunner = new Map<string, InsightRun[]>();
+  for (const run of runs) {
+    const runnerRuns = runsByRunner.get(run.runner) || [];
+    runnerRuns.push(run);
+    runsByRunner.set(run.runner, runnerRuns);
+  }
+  if (!latestMillis) return { days, asOf: null, entries: players.map((player) => ({ runner: player.Runner, country: player.Country, flagUrl: player['Flag URL'], rank: Number(player.Rank || 0), totalScore: Number(player['Total Score'] || 0), scoreGain: 0, performanceGain: 0, volumeGain: 0, varietyGain: 0, recentRuns: 0, recentBoards: 0, recentGames: 0, rankBefore: Number(player.Rank || 0), rankShift: 0, latestDate: null, undatedRuns: (runsByRunner.get(player.Runner) || []).length })) };
+  const cutoff = latestMillis - Math.max(1, days) * 86400000;
+  const allEntries = players.map((player) => {
+    const ownRuns = runsByRunner.get(player.Runner) || [];
+    const dated = ownRuns.map((run) => ({ run, millis: activityMillis(run) })).filter((item) => item.millis > 0);
+    const recent = dated.filter((item) => item.millis >= cutoff).map((item) => item.run);
+    const before = dated.filter((item) => item.millis < cutoff).map((item) => item.run);
+    const beforeParts = portfolioParts(before);
+    const currentParts = portfolioParts(dated.map((item) => item.run));
+    const recentParts = portfolioParts(recent);
+    const recentBoards = new Set(recent.map((run) => run.boardKey));
+    const beforeBoards = new Set(before.map((run) => run.boardKey));
+    const latestDate = dated.reduce((latest, item) => item.millis > latest ? item.millis : latest, 0);
+    const scoreGain = currentParts.total - beforeParts.total;
+    return {
+      runner: player.Runner,
+      country: player.Country,
+      flagUrl: player['Flag URL'],
+      rank: Number(player.Rank || 0),
+      totalScore: Number(player['Total Score'] || 0),
+      scoreGain,
+      performanceGain: currentParts.performance - beforeParts.performance,
+      volumeGain: currentParts.volume - beforeParts.volume,
+      varietyGain: currentParts.variety - beforeParts.variety,
+      recentRuns: recent.length,
+      recentBoards: Array.from(recentBoards).filter((board) => !beforeBoards.has(board)).length,
+      recentGames: Array.from(recentParts.games).filter((game) => !beforeParts.games.has(game)).length,
+      rankBefore: 0,
+      rankShift: 0,
+      latestDate: latestDate ? new Date(latestDate).toISOString() : null,
+      undatedRuns: ownRuns.length - dated.length,
+    };
+  });
+  const baselineOrder = allEntries.map((entry, index) => ({ index, score: portfolioParts((runsByRunner.get(entry.runner) || []).filter((run) => activityMillis(run) > 0 && activityMillis(run) < cutoff)).total, runner: entry.runner })).sort((a, b) => b.score - a.score || a.runner.localeCompare(b.runner));
+  baselineOrder.forEach((item, index) => { allEntries[item.index].rankBefore = index + 1; allEntries[item.index].rankShift = allEntries[item.index].rankBefore - allEntries[item.index].rank; });
+  return { days: Math.max(1, days), asOf: new Date(latestMillis).toISOString(), entries: allEntries.sort((a, b) => b.scoreGain - a.scoreGain || b.recentRuns - a.recentRuns || a.rank - b.rank || a.runner.localeCompare(b.runner)) };
 }
 
 export function dynastyTable(rows: InsightHistoryRow[], startYear: number, endYear: number): DynastyCareer[] {

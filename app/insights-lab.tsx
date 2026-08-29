@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, CalendarDays, Clock3, Crown, FlaskConical, Gauge, Map as MapIcon, Network, Pause, Play, Plus, Route, Search, Sparkles, Target, Trash2, Trophy, X } from 'lucide-react';
 import {
+  baseGameKey,
   careerRace,
   dynastyTable,
   eligibleBoardsForRunner,
@@ -10,6 +11,7 @@ import {
   engineSeason,
   formatRunTime,
   insightBoardLabel,
+  momentumReport,
   nextTargets,
   parseRunTime,
   projectedRank,
@@ -28,11 +30,13 @@ import {
   type RaceMetric,
 } from './insights';
 
-type LabMode = 'simulator' | 'timeline' | 'map' | 'hall' | 'seasons';
+type LabMode = 'simulator' | 'milestones' | 'momentum' | 'timeline' | 'map' | 'hall' | 'seasons';
 type Scenario = { boardKey: string; time: string; setupKey: string };
 
 const labModes: Array<{ key: LabMode; label: string; icon: typeof FlaskConical }> = [
   { key: 'simulator', label: 'Runner Lab', icon: FlaskConical },
+  { key: 'milestones', label: 'Milestones', icon: Target },
+  { key: 'momentum', label: 'Momentum', icon: Gauge },
   { key: 'timeline', label: 'Career Race', icon: Play },
   { key: 'map', label: 'Engine Map', icon: MapIcon },
   { key: 'hall', label: 'Dynasties', icon: Crown },
@@ -72,7 +76,45 @@ export default function InsightsLab({ players, runs, boards, yearly, gameNames, 
   const [runner, setRunner] = useState(players[0]?.Runner || '');
   const selected = players.find((player) => player.Runner === runner) || players[0] || null;
 
-  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <Dynasties rows={yearly} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
+  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <Dynasties rows={yearly} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
+}
+
+function displayDate(value: string | null) {
+  if (!value) return 'No dated activity';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(value));
+}
+
+function MilestoneWatch({ player, players, runs, boards, runner, setRunner, gameNames, openProfile, openRunnerLab }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void; openRunnerLab: () => void }) {
+  const targets = useMemo(() => nextTargets(player, runs, boards, 16), [boards, player, runs]);
+  const ownGames = useMemo(() => new Set(runs.filter((run) => run.runner === player.Runner).map((run) => baseGameKey(run.gameToggle || run.gameAbbr))), [player.Runner, runs]);
+  const nextRank = players.find((item) => Number(item.Rank) === Number(player.Rank) - 1);
+  const rankGap = nextRank ? Math.max(0, Number(nextRank['Total Score']) - Number(player['Total Score']) + 0.01) : 0;
+  const bestTarget = targets[0] || null;
+  const medalTarget = targets.find((target) => target.proposedPlace <= 3) || null;
+  const newGameTarget = targets.find((target) => target.missing && !ownGames.has(baseGameKey(target.board.gameAbbr))) || targets.find((target) => target.missing) || null;
+  const cards = [
+    { label: 'Overall rank', title: player.Rank === 1 ? 'At the top' : `Reach #${Math.max(1, Number(player.Rank) - 1)}`, value: player.Rank === 1 ? '#1' : `+${fmt(rankGap, 2)} pts`, detail: nextRank ? `Clear ${nextRank.Runner}'s current score` : 'No higher ranked runner in this view', tone: 'red' },
+    { label: 'Best score route', title: bestTarget ? `${gameNames[bestTarget.board.gameAbbr] || bestTarget.board.gameAbbr} · ${insightBoardLabel(bestTarget.board)}` : 'No route found', value: bestTarget ? `+${fmt(bestTarget.estimatedGain, 2)}` : '—', detail: bestTarget ? `${targetInstruction(bestTarget)} for about #${bestTarget.proposedPlace}` : 'More eligible board data is needed', tone: 'blue' },
+    { label: 'Next medal', title: medalTarget ? `${gameNames[medalTarget.board.gameAbbr] || medalTarget.board.gameAbbr} · ${insightBoardLabel(medalTarget.board)}` : 'No medal route found', value: medalTarget ? `#${medalTarget.proposedPlace}` : '—', detail: medalTarget ? `${medalTarget.difficulty} · +${fmt(medalTarget.estimatedGain, 2)} estimated points` : 'Current path has no proof-backed podium target', tone: 'gold' },
+    { label: 'Engine expansion', title: newGameTarget ? gameNames[newGameTarget.board.gameAbbr] || newGameTarget.board.gameAbbr : 'Portfolio complete', value: newGameTarget ? `+${fmt(newGameTarget.estimatedGain, 2)}` : `${ownGames.size} games`, detail: newGameTarget ? `${insightBoardLabel(newGameTarget.board)} · new-category benchmark` : 'No additional eligible game target found', tone: 'green' },
+  ];
+
+  return <div className="lab-stack">
+    <section className="lab-band milestone-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Watch milestones for" /><button className="profile-jump" onClick={() => { openProfile(player.Runner); }}>Open full profile</button><button className="profile-jump" onClick={openRunnerLab}>Open Runner Lab</button></section>
+    <section className="lab-panel milestone-panel"><div className="lab-panel-title"><div><span>Milestone Watch</span><h3>Concrete next steps for {player.Runner}</h3></div><Target size={22} /></div><p className="lab-explainer">Targets follow this runner&apos;s accepted hardware path and use frame-aware benchmarks from the included leaderboards. Points are estimates; Speedrun.com rules remain authoritative.</p><div className="milestone-grid">{cards.map((card) => <article className={`milestone-card ${card.tone}`} key={card.label}><span>{card.label}</span><strong>{card.title}</strong><b>{card.value}</b><small>{card.detail}</small></article>)}</div><div className="milestone-heading"><div><span>Priority queue</span><h4>Proof-backed goals</h4></div><span>{targets.length} candidates</span></div><div className="milestone-list">{targets.slice(0, 10).map((target, index) => <button key={`${target.board.boardKey}-${target.setupKey}`} onClick={openRunnerLab}><span className="milestone-index">{index + 1}</span><span className="milestone-copy"><strong>{gameNames[target.board.gameAbbr] || target.board.gameAbbr} · {insightBoardLabel(target.board)}</strong><small>{target.goalLabel} · {targetInstruction(target)} · {targetMeta(target)}</small></span><em>+{fmt(target.estimatedGain, 2)}<small>estimated</small></em></button>)}{!targets.length && <div className="rank-chase-empty"><Target size={20} /><span>No proof-backed targets are available for this runner under the current filters.</span></div>}</div></section>
+  </div>;
+}
+
+function MomentumLab({ players, runs, runner, setRunner, openProfile }: { players: InsightPlayer[]; runs: InsightRun[]; runner: string; setRunner: (runner: string) => void; openProfile: (runner: string) => void }) {
+  const [days, setDays] = useState(90);
+  const report = useMemo(() => momentumReport(players, runs, days), [days, players, runs]);
+  const activeEntries = report.entries.filter((entry) => entry.recentRuns > 0);
+  const selected = report.entries.find((entry) => entry.runner === runner) || report.entries[0] || null;
+  const pace = selected ? selected.scoreGain * 30 / report.days : 0;
+  return <div className="lab-stack">
+    <section className="lab-band momentum-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Focus runner" /><label className="lab-select-field"><span>Window</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="180">Last 180 days</option><option value="365">Last year</option></select></label><div className="momentum-asof"><span>Measured through</span><strong>{displayDate(report.asOf)}</strong><small>Verified date, with entered run date as fallback</small></div></section>
+    <section className="lab-panel momentum-panel"><div className="lab-panel-title"><div><span>Momentum</span><h3>Who is adding the most current score?</h3></div><Gauge size={22} /></div><p className="lab-explainer">Momentum is ranked by the estimated contribution of each runner&apos;s current, dated runs inside the selected window. It applies the same performance, volume, and variety rules as the leaderboard, using today&apos;s board placements.</p>{selected && <div className="momentum-focus"><button onClick={() => openProfile(selected.runner)}><FlagChip url={selected.flagUrl} /><span><strong>{selected.runner}</strong><small>Current rank #{selected.rank} · {selected.recentRuns} recent runs</small></span></button><div><span>Window contribution</span><strong>+{fmt(selected.scoreGain, 2)}</strong><small>{selected.performanceGain > 0 ? `${fmt(selected.performanceGain, 2)} performance` : 'No dated score contribution'}</small></div><div><span>30-day pace</span><strong>+{fmt(pace, 2)}</strong><small>{selected.recentBoards} new boards · {selected.recentGames} new games</small></div><div><span>Rank reconstruction</span><strong>{selected.rankShift > 0 ? `+${selected.rankShift}` : selected.rankShift < 0 ? `${selected.rankShift}` : '—'}</strong><small>{selected.rankBefore ? `Was about #${selected.rankBefore} at window start` : 'Not enough dated history'}</small></div></div>}<div className="momentum-heading"><div><span>Fastest current growth</span><h4>Top dated contributors</h4></div><span>{activeEntries.length} active runners</span></div><div className="momentum-list">{activeEntries.slice(0, 20).map((entry, index) => <button key={entry.runner} className={entry.runner === runner ? 'selected' : ''} onClick={() => setRunner(entry.runner)}><span className="momentum-rank">{index + 1}</span><FlagChip url={entry.flagUrl} /><span className="momentum-copy"><strong>{entry.runner}</strong><small>#{entry.rank} now · {entry.recentRuns} runs · {entry.recentBoards} new boards · {entry.recentGames} new games</small></span><span className="momentum-value"><b>+{fmt(entry.scoreGain, 2)}</b><small>+{fmt(entry.scoreGain * 30 / report.days, 2)} / 30d</small></span></button>)}{!activeEntries.length && <div className="rank-chase-empty"><Gauge size={20} /><span>No dated runs fall inside this window.</span></div>}</div>{selected && selected.undatedRuns > 0 && <p className="momentum-note">{selected.undatedRuns} current run{selected.undatedRuns === 1 ? '' : 's'} for {selected.runner} lack a usable verified or entered date and are excluded from this trend.</p>}</section>
+  </div>;
 }
 
 function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames, openProfile }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {

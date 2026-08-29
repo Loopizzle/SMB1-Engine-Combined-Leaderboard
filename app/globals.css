@@ -257,6 +257,111 @@ tbody tr:hover td { background:#292e32; }
   .winner-grid { grid-template-columns:1fr; }
   .winner-grid .winner-surface:last-child { order:-1; }
 }
+
+@media (max-width:680px) {
+  .milestone-toolbar .profile-jump { width:auto; }
+}
+
+/* Insights Lab comfortable reading scale and new goal views. */
+.insights-view .lab-tabs button { min-height:50px; padding-inline:18px; font-size:12px; }
+.insights-view .lab-panel-title>div>span,.insights-view .lab-runner-field>span,.insights-view .rank-chase-toolbar span,.insights-view .map-summary span,.insights-view .dynasty-toolbar>div span,.insights-view .dynasty-toolbar label>span,.insights-view .season-toolbar span { font-size:11px; }
+.insights-view .lab-panel-title h3 { font-size:18px; }
+.insights-view .lab-explainer { font-size:13px; line-height:1.6; }
+.insights-view .lab-runner-field { font-size:11px; }
+.insights-view .lab-runner-input input { font-size:14px; }
+.insights-view .lab-runner-results strong { font-size:13px; }
+.insights-view .lab-runner-results small { font-size:11px; }
+.insights-view .lab-runner-results em { font-size:12px; }
+.insights-view .profile-jump,.insights-view .add-scenario,.insights-view .play-button { font-size:13px; }
+.insights-view .lab-panel small { font-size:12px; }
+.insights-view .lab-panel strong { font-size:13px; }
+.insights-view .lab-panel em,.insights-view .lab-panel b { font-size:13px; }
+.insights-view .simulation-score strong { font-size:32px; }
+.insights-view .simulation-score>em { font-size:16px; }
+.insights-view .archetype-panel h3 { font-size:28px; }
+.insights-view .archetype-panel>p { font-size:13px; line-height:1.6; }
+.insights-view .map-summary strong,.insights-view .season-toolbar strong { font-size:24px; }
+.insights-view .rank-chase-route article small,.insights-view .race-moments article>span,.insights-view .race-moments article strong,.insights-view .race-moments article em { font-size:12px; }
+.insights-view .rank-chase-route article strong,.insights-view .race-standings strong,.insights-view .race-chart button>strong,.insights-view .map-node strong,.insights-view .dynasty-runner strong,.insights-view .season-table strong { font-size:13px; }
+.insights-view .rank-chase-route article b,.insights-view .race-standings em,.insights-view .race-chart em,.insights-view .map-node em,.insights-view .dynasty-cell strong,.insights-view .season-table b { font-size:13px; }
+.insights-view .rank-chase-note,.insights-view .momentum-note { font-size:12px; line-height:1.55; }
+
+.milestone-toolbar,.momentum-toolbar { align-items:end; justify-content:space-between; flex-wrap:wrap; }
+.milestone-toolbar .profile-jump { flex:0 0 auto; }
+.lab-select-field { min-width:180px; display:grid; gap:5px; color:#aeb5bb; font-size:11px; font-weight:800; text-transform:uppercase; }
+.lab-select-field select { width:100%; height:40px; border:1px solid #485058; border-radius:4px; background:#292e32; color:#fff; font-size:13px; }
+.momentum-asof { min-width:230px; display:grid; gap:3px; }
+.momentum-asof span,.momentum-asof small { color:#929ba2; font-size:12px; }
+.momentum-asof strong { color:#fff; font-size:15px; }
+.milestone-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:14px; border-bottom:1px solid #3d4348; background:#1c2023; }
+.milestone-card { min-width:0; min-height:145px; display:grid; align-content:start; gap:5px; padding:14px; border:1px solid #42494f; border-top:3px solid var(--blue); background:#292e32; }
+.milestone-card.red { border-top-color:var(--red); }
+.milestone-card.gold { border-top-color:var(--gold); }
+.milestone-card.green { border-top-color:var(--green); }
+.milestone-card>span { color:#aeb5bb; font-size:11px; font-weight:850; text-transform:uppercase; }
+.milestone-card>strong { min-height:37px; overflow:hidden; color:#fff; font-size:15px!important; line-height:1.25; text-overflow:ellipsis; }
+.milestone-card>b { color:var(--blue); font-size:20px!important; font-variant-numeric:tabular-nums; }
+.milestone-card.red>b { color:var(--red-dark); }
+.milestone-card.gold>b { color:var(--gold); }
+.milestone-card.green>b { color:var(--green); }
+.milestone-card>small { color:#b5bdc2; font-size:12px!important; line-height:1.4; }
+.milestone-heading,.momentum-heading { display:flex; align-items:end; justify-content:space-between; gap:12px; padding:15px 16px 8px; }
+.milestone-heading>div,.momentum-heading>div { display:grid; gap:3px; }
+.milestone-heading span,.momentum-heading span { color:#929ba2; font-size:11px; font-weight:800; text-transform:uppercase; }
+.milestone-heading h4,.momentum-heading h4 { margin:0; color:#fff; font-size:17px; }
+.milestone-list,.momentum-list { display:grid; padding:0 14px 14px; }
+.milestone-list>button,.momentum-list>button { min-width:0; display:grid; align-items:center; gap:10px; padding:11px 4px; border:0; border-bottom:1px solid #373d42; background:transparent; color:#fff; text-align:left; }
+.milestone-list>button { grid-template-columns:30px minmax(0,1fr) auto; }
+.milestone-list>button:hover,.momentum-list>button:hover,.momentum-list>button.selected { background:#292e32; }
+.milestone-index,.momentum-rank { width:26px; height:26px; display:grid; place-items:center; border:1px solid #4d555b; color:#c4cbd0; font-size:12px; font-weight:850; }
+.milestone-copy,.momentum-copy { min-width:0; display:grid; gap:4px; }
+.milestone-copy strong,.momentum-copy strong { overflow:hidden; color:#fff; font-size:13px!important; text-overflow:ellipsis; white-space:nowrap; }
+.milestone-copy small,.momentum-copy small { overflow:hidden; color:#aeb5bb; font-size:12px!important; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+.milestone-list em { color:var(--green); font-size:14px!important; font-style:normal; font-weight:850; text-align:right; }
+.milestone-list em small { display:block; margin-top:3px; color:#929ba2; font-size:11px!important; font-weight:500; }
+.momentum-panel { overflow:hidden; }
+.momentum-focus { display:grid; grid-template-columns:minmax(210px,1.3fr) repeat(3,minmax(130px,1fr)); border-bottom:1px solid #3d4348; background:#292e32; }
+.momentum-focus>button,.momentum-focus>div { min-width:0; min-height:92px; display:flex; align-items:center; gap:10px; padding:14px 16px; border:0; border-right:1px solid #41474d; background:transparent; color:#fff; text-align:left; }
+.momentum-focus>div { display:grid; align-content:center; gap:4px; }
+.momentum-focus>button:hover { background:#30363b; }
+.momentum-focus>button>span { min-width:0; display:grid; gap:3px; }
+.momentum-focus strong { overflow:hidden; font-size:15px!important; text-overflow:ellipsis; white-space:nowrap; }
+.momentum-focus span,.momentum-focus small { color:#aeb5bb; font-size:11px!important; }
+.momentum-focus>div>span { color:#929ba2; font-size:11px!important; text-transform:uppercase; font-weight:800; }
+.momentum-focus>div>strong { color:var(--blue); font-size:21px!important; font-variant-numeric:tabular-nums; }
+.momentum-focus>div>small { color:#b5bdc2; line-height:1.35; }
+.momentum-value { min-width:82px; display:grid; gap:3px; text-align:right; }
+.momentum-value b { color:var(--green); font-size:15px!important; font-variant-numeric:tabular-nums; }
+.momentum-value small { color:#aeb5bb; font-size:11px!important; }
+.momentum-list>button { grid-template-columns:30px 25px minmax(0,1fr) auto; }
+.momentum-list .flag { width:22px; height:15px; }
+
+@media (max-width:1040px) {
+  .milestone-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .momentum-focus { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .momentum-focus>button,.momentum-focus>div:nth-child(2) { border-bottom:1px solid #41474d; }
+  .momentum-focus>div:nth-child(2) { border-right:0; }
+}
+
+@media (max-width:680px) {
+  .insights-view .lab-tabs button { min-height:54px; padding-inline:14px; font-size:11px; }
+  .insights-view .lab-panel-title h3 { font-size:17px; }
+  .insights-view .lab-explainer { font-size:13px; }
+  .insights-view .lab-panel strong { font-size:13px; }
+  .milestone-toolbar .profile-jump { flex:1 1 calc(50% - 5px); }
+  .milestone-toolbar .lab-runner-field { flex-basis:100%; }
+  .milestone-grid { grid-template-columns:1fr; gap:8px; padding:10px; }
+  .milestone-card { min-height:0; }
+  .milestone-heading,.momentum-heading { align-items:start; flex-direction:column; padding:13px 11px 7px; }
+  .milestone-list,.momentum-list { padding-inline:10px; }
+  .milestone-copy small,.momentum-copy small { white-space:normal; }
+  .momentum-toolbar .lab-runner-field,.momentum-toolbar .lab-select-field,.momentum-toolbar .momentum-asof { width:100%; min-width:0; flex-basis:100%; }
+  .momentum-focus { grid-template-columns:1fr; }
+  .momentum-focus>button,.momentum-focus>div { border-right:0; border-bottom:1px solid #41474d; }
+  .momentum-focus>div:last-child { border-bottom:0; }
+  .momentum-list>button { grid-template-columns:28px 22px minmax(0,1fr) auto; gap:7px; padding-block:12px; }
+  .momentum-value { min-width:74px; }
+}
 @media (max-width:680px) {
   .topbar { height:62px; padding:0 12px; }
   .brand-kicker,.freshness { display:none; }
