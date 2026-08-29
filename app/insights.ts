@@ -51,8 +51,12 @@ export type InsightCareerRun = {
   seconds: number;
   runDate: string | null;
   country?: string | null;
+  profile?: string;
+  game?: string;
+  scope?: string;
   verifiedAt?: string | null;
   time?: string;
+  runLink?: string;
 };
 
 export type InsightBoard = {
