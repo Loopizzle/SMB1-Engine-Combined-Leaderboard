@@ -55,6 +55,14 @@ def compact(item, field_map):
     return {target: item.get(source) for source, target in field_map.items()}
 
 
+def sheet_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def round2(value):
     return math.floor(float(value) * 100 + 0.5) / 100
 
@@ -95,31 +103,43 @@ def monthly_board_key(board_key):
     return "|".join((parts[0], parts[1], parts[2], "|".join(parts[4:])))
 
 
-def historical_monthly_history(sheet, boards, games):
-    if sheet is None:
-        return [], []
-
-    enabled_games = {str(game.get("abbr")): bool(game.get("included")) for game in games}
-    board_index = {}
+def historical_board_index(boards):
+    index = {}
     for board in boards:
         key = monthly_board_key(board.get("boardKey"))
         if not key:
             continue
         abbreviation = str(board.get("gameAbbr") or "")
-        values = str(board.get("subcategory") or "")
-        toggle = f"{abbreviation} (Luigi)" if abbreviation in {"annsmb", "smbtll", "smbtllce"} and re.search(r"\bluigi\b", values, re.IGNORECASE) else abbreviation
-        board_index[key] = {
+        subcategory = str(board.get("subcategory") or "")
+        toggle = f"{abbreviation} (Luigi)" if abbreviation in {"annsmb", "smbtll", "smbtllce"} and re.search(r"\bluigi\b", subcategory, re.IGNORECASE) else abbreviation
+        index[key] = {
             "included": bool(board.get("included")),
+            "boardKey": str(board.get("boardKey") or ""),
+            "gameAbbr": abbreviation,
             "gameToggle": toggle,
+            "game": str(board.get("game") or abbreviation),
+            "scope": str(board.get("scope") or ""),
+            "category": str(board.get("category") or ""),
+            "level": board.get("level"),
+            "subcategory": board.get("subcategory"),
             "runCount": int(board.get("runCount") or 0),
         }
+    return index
+
+
+def historical_monthly_history(sheet, boards, games):
+    if sheet is None:
+        return [], []
+
+    enabled_games = {str(game.get("abbr")): bool(game.get("included")) for game in games}
+    board_index = historical_board_index(boards)
 
     history = dictionaries(rows_from(sheet))
     runs = []
     for item in history:
         month = str(item.get("Verified At") or "")[:7]
-        run_id = str(item.get("Run ID") or "")
-        player_key = str(item.get("Player Key") or "")
+        run_id = sheet_text(item.get("Run ID"))
+        player_key = sheet_text(item.get("Player Key"))
         board_key = str(item.get("Board Key") or "")
         seconds = item.get("Seconds")
         if month < MONTHLY_CHAMPION_START or not re.fullmatch(r"\d{4}-\d{2}", month):
@@ -133,7 +153,7 @@ def historical_monthly_history(sheet, boards, games):
             "month": month,
             "runId": run_id,
             "playerKey": player_key,
-            "runner": str(item.get("Runner") or player_key),
+            "runner": sheet_text(item.get("Runner")) or player_key,
             "country": str(item.get("Country") or ""),
             "profile": str(item.get("Profile") or ""),
             "boardKey": board_key,
@@ -221,6 +241,51 @@ def historical_monthly_history(sheet, boards, games):
         })
 
     return rows, winners
+
+
+def historical_career_runs(sheet, boards):
+    if sheet is None:
+        return []
+
+    board_index = historical_board_index(boards)
+    result = []
+    seen = set()
+    for item in dictionaries(rows_from(sheet)):
+        run_id = sheet_text(item.get("Run ID")).strip()
+        player_key = sheet_text(item.get("Player Key")).strip()
+        runner = (sheet_text(item.get("Runner")) or player_key).strip()
+        board = board_index.get(str(item.get("Board Key") or ""))
+        verified_at = str(item.get("Verified At") or "").strip()
+        run_date = str(item.get("Run Date") or "").strip()[:10] or verified_at[:10]
+        seconds = item.get("Seconds")
+        dedupe_key = (run_id, player_key)
+        if not run_id or not player_key or not runner or not board or seconds in (None, ""):
+            continue
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", run_date) or run_date < "2015-01-01":
+            continue
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        result.append({
+            "id": run_id,
+            "playerKey": player_key,
+            "runner": runner,
+            "country": str(item.get("Country") or ""),
+            "profile": str(item.get("Profile") or ""),
+            "boardKey": board["boardKey"],
+            "gameAbbr": board["gameAbbr"],
+            "gameToggle": board["gameToggle"],
+            "game": board["game"],
+            "scope": board["scope"],
+            "category": board["category"],
+            "level": board["level"],
+            "subcategory": board["subcategory"],
+            "seconds": float(seconds),
+            "runDate": run_date,
+            "verifiedAt": verified_at or None,
+            "runLink": str(item.get("Run Link") or ""),
+        })
+    return result
 
 
 def flag_url(formula):
@@ -320,6 +385,9 @@ def extract_payload(workbook_path):
         combined = dictionaries(rows_from(values["Combined Leaderboard"]))
         combined_flags = dictionaries(rows_from(formulas["Combined Leaderboard"]))
         for index, player in enumerate(combined):
+            player["Runner"] = sheet_text(player.get("Runner"))
+            if "Player Key" in player:
+                player["Player Key"] = sheet_text(player.get("Player Key"))
             formula = combined_flags[index].get("Flag") if index < len(combined_flags) else None
             player["Flag URL"] = flag_url(formula)
 
@@ -357,6 +425,9 @@ def extract_payload(workbook_path):
             })
             for item in dictionaries(rows_from(values["Runs"]))
         ]
+        for run in runs:
+            for field in ("id", "runner", "playerKey", "boardKey", "gameAbbr", "gameToggle"):
+                run[field] = sheet_text(run.get(field))
 
         boards = [
             compact(item, {
@@ -424,7 +495,9 @@ def extract_payload(workbook_path):
                 "profile": row[38],
             })
 
-        archived_monthly, archived_monthly_winners = historical_monthly_history(values["Yearly Data"], boards, games) if "Yearly Data" in values.sheetnames else ([], [])
+        history_sheet = values["Yearly Data"] if "Yearly Data" in values.sheetnames else None
+        archived_monthly, archived_monthly_winners = historical_monthly_history(history_sheet, boards, games)
+        career_runs = historical_career_runs(history_sheet, boards) if history_sheet is not None else runs
         current_months = {str(row.get("month") or "")[:7] for row in monthly}
         monthly = [
             row for row in archived_monthly
@@ -452,6 +525,7 @@ def extract_payload(workbook_path):
             "generatedAt": datetime.now(timezone.utc).isoformat(),
             "combined": combined,
             "runs": runs,
+            "careerRuns": career_runs,
             "boards": boards,
             "games": games,
             "monthly": monthly,
@@ -469,6 +543,7 @@ def validate_payload(payload):
     minimums = {
         "combined": 100,
         "runs": 1_000,
+        "careerRuns": 1_000,
         "boards": 20,
         "games": 6,
         "monthly": 1,
