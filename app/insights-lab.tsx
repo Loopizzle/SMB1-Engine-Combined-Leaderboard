@@ -30,7 +30,7 @@ import {
 } from './insights';
 import { archiveYears, historicalImpact } from './history-analytics';
 
-type LabMode = 'simulator' | 'milestones' | 'momentum' | 'timeline' | 'map' | 'hall' | 'seasons';
+export type LabMode = 'simulator' | 'milestones' | 'momentum' | 'timeline' | 'map' | 'hall' | 'seasons';
 type Scenario = { boardKey: string; time: string; setupKey: string };
 
 const labModes: Array<{ key: LabMode; label: string; icon: typeof FlaskConical }> = [
@@ -71,9 +71,11 @@ function RunnerSearch({ players, value, onChange, label = 'Runner' }: { players:
   return <label className="lab-runner-field"><span>{label}</span><div className="lab-runner-input"><Search size={16} /><input value={shownValue} onFocus={() => { setOpen(true); setQuery(''); }} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onBlur={() => setTimeout(() => setOpen(false), 120)} placeholder="Search runners" />{open && <div className="lab-runner-results">{matches.map((player) => <button type="button" key={player.Runner} onMouseDown={(event) => { event.preventDefault(); onChange(player.Runner); setQuery(player.Runner); setOpen(false); }}><FlagChip url={player['Flag URL']} /><span><strong>{player.Runner}</strong><small>{player.Country || 'Unlisted country'}</small></span><em>#{player.Rank}</em></button>)}{!matches.length && <p>No runners found.</p>}</div>}</div></label>;
 }
 
-export default function InsightsLab({ players, runs, careerRuns, boards, gameNames, openProfile }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
-  const [mode, setMode] = useState<LabMode>('simulator');
-  const [runner, setRunner] = useState(players[0]?.Runner || '');
+export default function InsightsLab({ players, runs, careerRuns, boards, gameNames, openProfile, selectedMode, selectedRunner, onSelectionChange }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; gameNames: Record<string, string>; openProfile: (runner: string) => void; selectedMode: LabMode; selectedRunner: string; onSelectionChange: (mode: LabMode, runner: string) => void }) {
+  const mode = labModes.some((item) => item.key === selectedMode) ? selectedMode : 'simulator';
+  const runner = players.some((player) => player.Runner === selectedRunner) ? selectedRunner : players[0]?.Runner || '';
+  const setMode = (nextMode: LabMode) => onSelectionChange(nextMode, runner);
+  const setRunner = (nextRunner: string) => onSelectionChange(mode, nextRunner);
   const selected = players.find((player) => player.Runner === runner) || players[0] || null;
 
   return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} careerRuns={careerRuns} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <AgainstTheirTime careerRuns={careerRuns} players={players} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
