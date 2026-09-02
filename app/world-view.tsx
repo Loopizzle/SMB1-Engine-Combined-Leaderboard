@@ -22,7 +22,8 @@ export type RunnerMetadata = { playerKey: string; runner: string; countryCode: s
 export type WorldFilters = { query: string; game: string; country: string; region: string };
 type GeoFeature = { properties: Record<string, string | number | null>; geometry: { type: 'Polygon' | 'MultiPolygon'; coordinates: number[][][] | number[][][][] } };
 type RegionCentroid = { countryCode: string; code: string; name: string; postal: string | null; latitude: number; longitude: number };
-type MapPoint = { player: WorldPlayer; meta: RunnerMetadata | null; countryCode: string; country: string; region: string; x: number; y: number; icon: string | null };
+type MapPoint = { player: WorldPlayer; meta: RunnerMetadata | null; countryCode: string; country: string; region: string; x: number; y: number; avatar: string | null };
+type MapPosition = { x: number; y: number };
 
 function normalize(value: string | null | undefined) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^a-z0-9]/g, ''); }
 function project(longitude: number, latitude: number) { return { x: (longitude + 180) / 360 * MAP_WIDTH, y: (90 - latitude) / 180 * MAP_HEIGHT }; }
@@ -30,6 +31,10 @@ function hash(value: string) { let output = 2166136261; for (let index = 0; inde
 function countryCode(value: string | null | undefined) { const raw = String(value || '').toLocaleLowerCase().replace(/-/g, '/'); if (raw === 'valhalla' || raw === 'vh') return 'vh'; return SUBNATIONAL_COUNTRIES[raw]?.code || raw.slice(0, 2); }
 function format(value: number, decimals = 0) { return new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(value || 0); }
 function safeImage(value: string | null | undefined) { try { const url = new URL(value || ''); return url.protocol === 'https:' && (url.hostname === 'speedrun.com' || url.hostname.endsWith('.speedrun.com')) ? url.href : null; } catch { return null; } }
+function clamp(value: number, minimum: number, maximum: number) { return Math.min(maximum, Math.max(minimum, value)); }
+function clampPan(pan: MapPosition, zoom: number) {
+  return { x: clamp(pan.x, MAP_WIDTH * (1 - zoom), 0), y: clamp(pan.y, MAP_HEIGHT * (1 - zoom), 0) };
+}
 
 function ringPath(points: number[][]) {
   let path = ''; let previousX: number | null = null;
@@ -52,7 +57,48 @@ export default function WorldView({ players, runs, metadata, gameNames, openProf
   const [regions, setRegions] = useState<RegionCentroid[]>([]);
   const { query, game, country: selectedCountry, region: selectedRegion } = filters;
   const [zoom, setZoom] = useState(1); const [pan, setPan] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const mapRef = useRef<SVGSVGElement | null>(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef<MapPosition>({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const focusedLocation = useRef('');
+
+  function setMapView(nextZoom: number, nextPan: MapPosition) {
+    const boundedZoom = clamp(nextZoom, 1, 6);
+    const boundedPan = clampPan(nextPan, boundedZoom);
+    zoomRef.current = boundedZoom; panRef.current = boundedPan;
+    setZoom(boundedZoom); setPan(boundedPan);
+  }
+  function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+    const point = svg.createSVGPoint(); point.x = clientX; point.y = clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }
+  function zoomAt(nextZoom: number, anchor: MapPosition) {
+    const currentZoom = zoomRef.current; const currentPan = panRef.current;
+    const mapX = (anchor.x - currentPan.x) / currentZoom; const mapY = (anchor.y - currentPan.y) / currentZoom;
+    const boundedZoom = clamp(nextZoom, 1, 6);
+    setMapView(boundedZoom, { x: anchor.x - mapX * boundedZoom, y: anchor.y - mapY * boundedZoom });
+  }
+  function endDrag() {
+    suppressClick.current = Boolean(drag.current?.moved);
+    drag.current = null;
+  }
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault(); event.stopPropagation();
+      const factor = clamp(Math.exp(-event.deltaY * .0016), .78, 1.28);
+      zoomAt(zoomRef.current * factor, svgPoint(map, event.clientX, event.clientY));
+    };
+    map.addEventListener('wheel', handleWheel, { passive: false });
+    return () => map.removeEventListener('wheel', handleWheel);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -95,7 +141,7 @@ export default function WorldView({ players, runs, metadata, gameNames, openProf
     const seed = hash(player.playerKey || player.Runner); const angle = seed % 360 / 180 * Math.PI; const radius = Math.sqrt(((seed >>> 8) % 1000) / 1000) * (regionLocation ? 20 : 55);
     const baseLongitude = 'longitude' in location ? location.longitude : 0; const baseLatitude = 'latitude' in location ? location.latitude : 0;
     const projected = project(baseLongitude, baseLatitude);
-    return [{ player, meta, countryCode: code, country, region, x: projected.x + Math.cos(angle) * radius, y: projected.y + Math.sin(angle) * radius, icon: safeImage(meta?.icon || meta?.image) } as MapPoint];
+    return [{ player, meta, countryCode: code, country, region, x: projected.x + Math.cos(angle) * radius, y: projected.y + Math.sin(angle) * radius, avatar: safeImage(meta?.image || meta?.icon) } as MapPoint];
   }), [countryLocations, metadataByKey, metadataByRunner, players, regionLocations]);
   const filteredPoints = useMemo(() => {
     const needle = normalize(query);
@@ -112,38 +158,48 @@ export default function WorldView({ players, runs, metadata, gameNames, openProf
   const activeGroups = selectedCountry ? regionGroups : countryGroups;
   const panelPoints = filteredPoints;
 
+  useEffect(() => {
+    const locationKey = selectedCountry ? `${selectedCountry}|${selectedRegion}` : '';
+    if (!locationKey) { focusedLocation.current = ''; return; }
+    if (focusedLocation.current === locationKey || !points.length) return;
+    const locationPoints = points.filter((point) => point.country === selectedCountry && (!selectedRegion || point.region === selectedRegion));
+    if (!locationPoints.length) return;
+    focusedLocation.current = locationKey;
+    focus(locationPoints, selectedRegion ? 4.2 : 2.35);
+  }, [points, selectedCountry, selectedRegion]);
+
   function focus(pointsToFocus: MapPoint[], nextZoom: number) {
     if (!pointsToFocus.length) return;
     const x = pointsToFocus.reduce((sum, point) => sum + point.x, 0) / pointsToFocus.length; const y = pointsToFocus.reduce((sum, point) => sum + point.y, 0) / pointsToFocus.length;
-    setZoom(nextZoom); setPan({ x: MAP_WIDTH / 2 - x * nextZoom, y: MAP_HEIGHT / 2 - y * nextZoom });
+    setMapView(nextZoom, { x: MAP_WIDTH / 2 - x * nextZoom, y: MAP_HEIGHT / 2 - y * nextZoom });
   }
-  function resetMap() { onFiltersChange({ country: '', region: '' }); setZoom(1); setPan({ x: 0, y: 0 }); }
+  function resetMap() { focusedLocation.current = ''; onFiltersChange({ country: '', region: '' }); setMapView(1, { x: 0, y: 0 }); }
   function selectGroup(name: string, groupPoints: MapPoint[]) {
-    if (!selectedCountry) { onFiltersChange({ country: name, region: '' }); focus(groupPoints, 2.35); }
-    else { onFiltersChange({ region: name }); focus(groupPoints, 4.2); }
+    if (!selectedCountry) { focusedLocation.current = `${name}|`; onFiltersChange({ country: name, region: '' }); focus(groupPoints, 2.35); }
+    else { focusedLocation.current = `${selectedCountry}|${name}`; onFiltersChange({ region: name }); focus(groupPoints, 4.2); }
   }
 
   return <section className="view-section world-view">
     <div className="page-heading"><div><p className="eyebrow">The engine around the globe</p><h2>World</h2></div><Globe2 size={28} /></div>
-    <div className="world-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => onFiltersChange({ query: event.target.value })} placeholder="Search runner, country or province" /></label><select aria-label="Filter World by game" value={game} onChange={(event) => onFiltersChange({ game: event.target.value })}><option>All games</option>{Object.entries(gameNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><div className="world-breadcrumbs"><button onClick={resetMap}>World</button>{selectedCountry && <><span>/</span><button onClick={() => { onFiltersChange({ region: '' }); focus(points.filter((point) => point.country === selectedCountry), 2.35); }}>{selectedCountry}</button></>}{selectedRegion && <><span>/</span><strong>{selectedRegion}</strong></>}</div><span className="world-count"><Users size={15} />{format(filteredPoints.length)} mapped runners</span></div>
+    <div className="world-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => onFiltersChange({ query: event.target.value })} placeholder="Search runner, country or province" /></label><select aria-label="Filter World by game" value={game} onChange={(event) => onFiltersChange({ game: event.target.value })}><option>All games</option>{Object.entries(gameNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select><div className="world-breadcrumbs"><button onClick={resetMap}>World</button>{selectedCountry && <><span>/</span><button onClick={() => { focusedLocation.current = `${selectedCountry}|`; onFiltersChange({ region: '' }); focus(points.filter((point) => point.country === selectedCountry), 2.35); }}>{selectedCountry}</button></>}{selectedRegion && <><span>/</span><strong>{selectedRegion}</strong></>}</div><span className="world-count"><Users size={15} />{format(filteredPoints.length)} mapped runners</span></div>
     <div className="world-layout">
       <section className="world-map-shell">
-        <svg className="world-map" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="img" aria-label="Interactive map of SMB1 engine runners" onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.max(1, Math.min(6, current * (event.deltaY < 0 ? 1.18 : .85)))); }} onPointerDown={(event) => { drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * MAP_WIDTH / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * MAP_HEIGHT / bounds.height }); }} onPointerUp={() => { drag.current = null; }}>
+        <svg ref={mapRef} className="world-map" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="img" aria-label="Interactive map of SMB1 engine runners" tabIndex={0} onDoubleClick={(event) => { event.preventDefault(); zoomAt(zoomRef.current * 1.5, svgPoint(event.currentTarget, event.clientX, event.clientY)); }} onKeyDown={(event) => { const center = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 }; if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomAt(zoomRef.current * 1.3, center); } else if (event.key === '-') { event.preventDefault(); zoomAt(zoomRef.current / 1.3, center); } else if (event.key === '0') { event.preventDefault(); setMapView(1, { x: 0, y: 0 }); } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); const step = 34; setMapView(zoomRef.current, { x: panRef.current.x + (event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0), y: panRef.current.y + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0) }); } }} onPointerDown={(event) => { if (event.button !== 0) return; const point = svgPoint(event.currentTarget, event.clientX, event.clientY); drag.current = { x: point.x, y: point.y, panX: panRef.current.x, panY: panRef.current.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!drag.current) return; const point = svgPoint(event.currentTarget, event.clientX, event.clientY); const dx = point.x - drag.current.x; const dy = point.y - drag.current.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true; setMapView(zoomRef.current, { x: drag.current.panX + dx, y: drag.current.panY + dy }); }} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}>
           <rect width={MAP_WIDTH} height={MAP_HEIGHT} className="world-ocean" />
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
             {features.map((feature, index) => <path className="world-country" vectorEffect="non-scaling-stroke" fillRule="evenodd" d={featurePath(feature)} key={`${feature.properties.ADM0_A3 || feature.properties.NAME}-${index}`} />)}
-            {!selectedRegion && activeGroups.map(([name, groupPoints]) => { const x = groupPoints.reduce((sum, point) => sum + point.x, 0) / groupPoints.length; const y = groupPoints.reduce((sum, point) => sum + point.y, 0) / groupPoints.length; const radius = Math.min(15, 5 + Math.sqrt(groupPoints.length) * .55) / Math.sqrt(zoom); return <g className="world-cluster" transform={`translate(${x} ${y})`} onClick={(event) => { event.stopPropagation(); selectGroup(name, groupPoints); }} key={name}><circle r={radius} /><text y={1 / Math.sqrt(zoom)} fontSize={Math.max(4, radius * .72)}>{groupPoints.length}</text><title>{name}: {groupPoints.length} runners</title></g>; })}
-            {selectedRegion && laidOutIndividuals.map((point) => <g className="world-runner-point" transform={`translate(${point.x} ${point.y})`} onClick={(event) => { event.stopPropagation(); openProfile(point.player.Runner); }} key={point.player.playerKey || point.player.Runner}><circle r={8 / zoom} /><image href={point.icon || './mario-logo.webp'} x={-7 / zoom} y={-7 / zoom} width={14 / zoom} height={14 / zoom} preserveAspectRatio="xMidYMid slice" /><title>{point.player.Runner} · {point.region}, {point.country}</title></g>)}
+            {!selectedRegion && activeGroups.map(([name, groupPoints]) => { const x = groupPoints.reduce((sum, point) => sum + point.x, 0) / groupPoints.length; const y = groupPoints.reduce((sum, point) => sum + point.y, 0) / groupPoints.length; const radius = Math.min(15, 5 + Math.sqrt(groupPoints.length) * .55) / Math.sqrt(zoom); return <g className="world-cluster" transform={`translate(${x} ${y})`} onClick={(event) => { event.stopPropagation(); if (suppressClick.current) { suppressClick.current = false; return; } selectGroup(name, groupPoints); }} key={name}><circle r={radius} /><text y={1 / Math.sqrt(zoom)} fontSize={Math.max(4, radius * .72)}>{groupPoints.length}</text><title>{name}: {groupPoints.length} runners</title></g>; })}
+            {selectedRegion && laidOutIndividuals.map((point) => <g className="world-runner-point" transform={`translate(${point.x} ${point.y})`} onClick={(event) => { event.stopPropagation(); if (suppressClick.current) { suppressClick.current = false; return; } openProfile(point.player.Runner); }} key={point.player.playerKey || point.player.Runner}><circle r={8 / zoom} /><image href={point.avatar || './mario-logo.webp'} x={-7 / zoom} y={-7 / zoom} width={14 / zoom} height={14 / zoom} preserveAspectRatio="xMidYMid slice" /><title>{point.player.Runner} · {point.region}, {point.country}</title></g>)}
           </g>
         </svg>
-        <div className="world-map-controls"><button onClick={() => setZoom((current) => Math.min(6, current * 1.3))} title="Zoom in"><Plus size={17} /></button><button onClick={() => setZoom((current) => Math.max(1, current / 1.3))} title="Zoom out"><Minus size={17} /></button><button onClick={resetMap} title="Reset map"><LocateFixed size={17} /></button></div>
+        <div className="world-map-controls"><button onClick={() => zoomAt(zoomRef.current * 1.3, { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 })} disabled={zoom >= 5.999} title="Zoom in"><Plus size={17} /></button><button onClick={() => zoomAt(zoomRef.current / 1.3, { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 })} disabled={zoom <= 1.001} title="Zoom out"><Minus size={17} /></button><button onClick={resetMap} disabled={zoom <= 1.001 && pan.x === 0 && pan.y === 0 && !selectedCountry && !selectedRegion} title="Reset map"><LocateFixed size={17} /></button></div>
         <p className="world-map-note">Markers use public country or province data and deterministic spread. They never represent an exact address.</p>
       </section>
       <aside className="world-panel">
         <div className="world-panel-heading"><div><span>{selectedRegion ? 'Province or region' : selectedCountry ? 'Country detail' : 'Global overview'}</span><h3>{selectedRegion || selectedCountry || 'Where the engine runs'}</h3></div>{(selectedCountry || selectedRegion) && <button onClick={resetMap} title="Clear location"><X size={17} /></button>}</div>
         <div className="world-panel-stats"><div><strong>{format(panelPoints.length)}</strong><span>Runners</span></div><div><strong>{format(panelPoints.reduce((sum, point) => sum + point.player.WRs, 0))}</strong><span>WRs</span></div><div><strong>{format(panelPoints.reduce((sum, point) => sum + point.player['Total Score'], 0), 0)}</strong><span>Total points</span></div></div>
         {!selectedRegion && <div className="world-location-list">{activeGroups.slice(0, 16).map(([name, groupPoints], index) => <button onClick={() => selectGroup(name, groupPoints)} key={name}><span>{index + 1}</span><strong>{name}<small>{groupPoints[0]?.country === name ? `${new Set(groupPoints.map((point) => point.region)).size} listed regions` : groupPoints[0]?.country}</small></strong><em>{format(groupPoints.length)}</em></button>)}</div>}
-        {selectedRegion && <div className="world-runner-list">{visibleIndividuals.slice(0, 18).map((point) => <button onClick={() => openProfile(point.player.Runner)} key={point.player.playerKey || point.player.Runner}><img src={point.icon || './mario-logo.webp'} alt="" loading="lazy" /><strong>{point.player.Runner}<small>#{point.player.Rank} · {format(point.player.WRs)} WRs</small></strong><em>{format(point.player['Total Score'], 2)}</em></button>)}</div>}
+        {selectedRegion && <div className="world-runner-list">{visibleIndividuals.slice(0, 18).map((point) => <button onClick={() => openProfile(point.player.Runner)} key={point.player.playerKey || point.player.Runner}><img src={point.avatar || './mario-logo.webp'} alt="" loading="lazy" /><strong>{point.player.Runner}<small>#{point.player.Rank} · {format(point.player.WRs)} WRs</small></strong><em>{format(point.player['Total Score'], 2)}</em></button>)}</div>}
         <p className="world-source">Geography: Natural Earth. Runner locations and profile assets: public Speedrun.com profiles.</p>
       </aside>
     </div>

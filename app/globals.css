@@ -1130,9 +1130,10 @@ tbody tr:hover td { background:#292e32; }
 .world-breadcrumbs span { color:#687178; }
 .world-count { display:flex; align-items:center; gap:6px; color:#9fa7ae; font-size:10px; white-space:nowrap; }
 .world-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(285px,340px); gap:12px; margin-top:12px; }
-.world-map-shell { position:relative; min-width:0; min-height:560px; overflow:hidden; border:1px solid #41474d; background:#111619; box-shadow:0 12px 30px rgba(0,0,0,.2); touch-action:none; }
-.world-map { width:100%; height:100%; min-height:560px; display:block; cursor:grab; user-select:none; }
+.world-map-shell { position:relative; min-width:0; min-height:560px; overflow:hidden; overscroll-behavior:contain; border:1px solid #41474d; background:#111619; box-shadow:0 12px 30px rgba(0,0,0,.2); touch-action:none; }
+.world-map { width:100%; height:100%; min-height:560px; display:block; cursor:grab; user-select:none; overscroll-behavior:contain; }
 .world-map:active { cursor:grabbing; }
+.world-map:focus-visible { outline:2px solid var(--blue); outline-offset:-2px; }
 .world-ocean { fill:#16232b; }
 .world-country { fill:#303b3a; stroke:#65706d; stroke-width:.7; transition:fill .16s ease,stroke .16s ease; }
 .world-cluster { cursor:pointer; }
@@ -1146,6 +1147,7 @@ tbody tr:hover td { background:#292e32; }
 .world-map-controls button { width:38px; height:38px; display:grid; place-items:center; border:0; border-bottom:1px solid #4b5359; background:#20262a; color:#d9dde0; }
 .world-map-controls button:last-child { border-bottom:0; }
 .world-map-controls button:hover { background:#30373c; color:#fff; }
+.world-map-controls button:disabled { color:#666e74; background:#1b2023; cursor:default; }
 .world-map-note { position:absolute; left:12px; right:12px; bottom:10px; margin:0; padding:7px 10px; background:rgba(17,21,24,.88); color:#aeb5bb; font-size:9px; line-height:1.4; pointer-events:none; }
 .world-panel { min-width:0; overflow:hidden; border:1px solid #41474d; background:#202428; box-shadow:0 12px 30px rgba(0,0,0,.18); }
 .world-panel-heading { min-height:69px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid #3d4348; }
