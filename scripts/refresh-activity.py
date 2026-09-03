@@ -9,6 +9,7 @@ import math
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -166,6 +167,28 @@ def build_activity(current: dict, previous: dict | None) -> dict:
     }
 
 
+def parse_date(value) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(text(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def seed_recent_activity(current: dict, hours: int = 24) -> dict:
+    generated = parse_date(current.get("generatedAt")) or datetime.now(timezone.utc)
+    cutoff = generated - timedelta(hours=hours)
+    recent_keys = {
+        run_key(run)
+        for run in current.get("runs", [])
+        if run.get("included") is not False and (parse_date(run.get("verifiedAt")) or datetime.min.replace(tzinfo=timezone.utc)) >= cutoff
+    }
+    previous = build_snapshot(current)
+    previous["generatedAt"] = cutoff.isoformat()
+    previous["runKeys"] = [key for key in previous["runKeys"] if key not in recent_keys]
+    return build_activity(current, previous)
+
+
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -206,6 +229,8 @@ def main():
         activity = prior_activity
         activity["checkedAt"] = current.get("generatedAt")
         activity["unchanged"] = True
+    elif change_count == 0:
+        activity = seed_recent_activity(current)
 
     write_json(args.output, activity)
     write_json(args.snapshot, build_snapshot(current))
