@@ -455,6 +455,7 @@ def extract_payload(workbook_path):
                 "Top 10 Credit": "top10Credit",
                 "Board Key": "boardKey",
                 "Game Toggle": "gameToggle",
+                "Region": "region",
             })
             for item in dictionaries(rows_from(values["Runs"]))
         ]

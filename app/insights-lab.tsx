@@ -26,12 +26,20 @@ import {
   type InsightCareerRun,
   type InsightPlayer,
   type InsightRun,
+  type LabRegion,
   type RaceMetric,
 } from './insights';
 import { archiveYears, historicalImpact } from './history-analytics';
 
 export type LabMode = 'simulator' | 'milestones' | 'momentum' | 'timeline' | 'map' | 'hall' | 'seasons';
-type Scenario = { boardKey: string; time: string; setupKey: string };
+type Scenario = { boardKey: string; time: string; setupKey: string; region: LabRegion };
+
+const LAB_REGIONS: Array<{ value: LabRegion; label: string }> = [
+  { value: 'Auto', label: 'Auto' },
+  { value: 'NTSC-U', label: 'NTSC-U' },
+  { value: 'NTSC-J', label: 'NTSC-J' },
+  { value: 'PAL', label: 'PAL' },
+];
 
 const labModes: Array<{ key: LabMode; label: string; icon: typeof FlaskConical }> = [
   { key: 'simulator', label: 'Runner Lab', icon: FlaskConical },
@@ -51,7 +59,12 @@ function targetMeta(target: ReturnType<typeof nextTargets>[number]) {
   const cadence = target.cadenceFps ? `${(1000 / target.cadenceFps).toFixed(3)} ms/frame` : target.cadenceLabel;
   const timeToFind = target.currentSeconds && target.currentSeconds > target.goalSeconds ? formatRunTime(target.currentSeconds - target.goalSeconds) : '';
   const effort = target.framesToFind && target.framesToFind <= 300 ? `${target.framesToFind} frame${target.framesToFind === 1 ? '' : 's'} to find` : timeToFind ? `${timeToFind} to find` : target.missing ? 'new category' : 'accepted benchmark';
-  return `${target.setupLabel} · ${target.difficulty} · ${effort} · ${cadence}`;
+  const region = target.region === 'Unknown' ? 'region pending' : target.region;
+  return `${target.setupLabel} · ${region}${target.regionExact ? '' : ' fallback'} · ${target.difficulty} · ${effort} · ${cadence}`;
+}
+
+function RegionSelect({ value, onChange, label = 'Region path' }: { value: LabRegion; onChange: (region: LabRegion) => void; label?: string }) {
+  return <label className="lab-select-field region-select"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as LabRegion)}>{LAB_REGIONS.map((region) => <option key={region.value} value={region.value}>{region.label}</option>)}</select></label>;
 }
 
 function FlagChip({ url }: { url: string | null }) {
@@ -71,14 +84,14 @@ function RunnerSearch({ players, value, onChange, label = 'Runner' }: { players:
   return <label className="lab-runner-field"><span>{label}</span><div className="lab-runner-input"><Search size={16} /><input value={shownValue} onFocus={() => { setOpen(true); setQuery(''); }} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onBlur={() => setTimeout(() => setOpen(false), 120)} placeholder="Search runners" />{open && <div className="lab-runner-results">{matches.map((player) => <button type="button" key={player.Runner} onMouseDown={(event) => { event.preventDefault(); onChange(player.Runner); setQuery(player.Runner); setOpen(false); }}><FlagChip url={player['Flag URL']} /><span><strong>{player.Runner}</strong><small>{player.Country || 'Unlisted country'}</small></span><em>#{player.Rank}</em></button>)}{!matches.length && <p>No runners found.</p>}</div>}</div></label>;
 }
 
-export default function InsightsLab({ players, runs, careerRuns, boards, gameNames, openProfile, selectedMode, selectedRunner, onSelectionChange }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; gameNames: Record<string, string>; openProfile: (runner: string) => void; selectedMode: LabMode; selectedRunner: string; onSelectionChange: (mode: LabMode, runner: string) => void }) {
+export default function InsightsLab({ players, runs, careerRuns, boards, gameNames, openProfile, selectedMode, selectedRunner, selectedRegion, onRegionChange, onSelectionChange }: { players: InsightPlayer[]; runs: InsightRun[]; careerRuns: InsightCareerRun[]; boards: InsightBoard[]; gameNames: Record<string, string>; openProfile: (runner: string) => void; selectedMode: LabMode; selectedRunner: string; selectedRegion: LabRegion; onRegionChange: (region: LabRegion) => void; onSelectionChange: (mode: LabMode, runner: string) => void }) {
   const mode = labModes.some((item) => item.key === selectedMode) ? selectedMode : 'simulator';
   const runner = players.some((player) => player.Runner === selectedRunner) ? selectedRunner : players[0]?.Runner || '';
   const setMode = (nextMode: LabMode) => onSelectionChange(nextMode, runner);
   const setRunner = (nextRunner: string) => onSelectionChange(mode, nextRunner);
   const selected = players.find((player) => player.Runner === runner) || players[0] || null;
 
-  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} careerRuns={careerRuns} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <AgainstTheirTime careerRuns={careerRuns} players={players} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
+  return <section className="view-section insights-view"><div className="page-heading lab-heading"><div><p className="eyebrow">Explore the engine differently</p><h2>Insights Lab</h2></div><Sparkles size={28} /></div><nav className="lab-tabs" aria-label="Insights Lab tools">{labModes.map(({ key, label, icon: Icon }) => <button key={key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}><Icon size={16} />{label}</button>)}</nav>{mode === 'simulator' && selected && <RunnerLab player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} region={selectedRegion} setRegion={onRegionChange} />}{mode === 'milestones' && selected && <MilestoneWatch player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} openRunnerLab={() => setMode('simulator')} region={selectedRegion} setRegion={onRegionChange} />}{mode === 'momentum' && <MomentumLab players={players} runs={runs} runner={runner} setRunner={setRunner} openProfile={openProfile} />}{mode === 'timeline' && selected && <CareerRace player={selected} players={players} runs={runs} careerRuns={careerRuns} runner={runner} setRunner={setRunner} gameNames={gameNames} openProfile={openProfile} />}{mode === 'map' && selected && <EngineMap player={selected} players={players} runs={runs} boards={boards} runner={runner} setRunner={setRunner} gameNames={gameNames} />}{mode === 'hall' && <AgainstTheirTime careerRuns={careerRuns} players={players} openProfile={openProfile} />}{mode === 'seasons' && <EngineSeasons players={players} runs={runs} openProfile={openProfile} />}</section>;
 }
 
 function displayDate(value: string | null) {
@@ -86,8 +99,8 @@ function displayDate(value: string | null) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(value));
 }
 
-function MilestoneWatch({ player, players, runs, boards, runner, setRunner, gameNames, openProfile, openRunnerLab }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void; openRunnerLab: () => void }) {
-  const targets = useMemo(() => nextTargets(player, runs, boards, 16), [boards, player, runs]);
+function MilestoneWatch({ player, players, runs, boards, runner, setRunner, gameNames, openProfile, openRunnerLab, region, setRegion }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void; openRunnerLab: () => void; region: LabRegion; setRegion: (region: LabRegion) => void }) {
+  const targets = useMemo(() => nextTargets(player, runs, boards, 16, region), [boards, player, region, runs]);
   const ownGames = useMemo(() => new Set(runs.filter((run) => run.runner === player.Runner).map((run) => baseGameKey(run.gameToggle || run.gameAbbr))), [player.Runner, runs]);
   const nextRank = players.find((item) => Number(item.Rank) === Number(player.Rank) - 1);
   const rankGap = nextRank ? Math.max(0, Number(nextRank['Total Score']) - Number(player['Total Score']) + 0.01) : 0;
@@ -102,7 +115,7 @@ function MilestoneWatch({ player, players, runs, boards, runner, setRunner, game
   ];
 
   return <div className="lab-stack">
-    <section className="lab-band milestone-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Watch milestones for" /><button className="profile-jump" onClick={() => { openProfile(player.Runner); }}>Open full profile</button><button className="profile-jump" onClick={openRunnerLab}>Open Runner Lab</button></section>
+    <section className="lab-band milestone-toolbar"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Watch milestones for" /><RegionSelect value={region} onChange={setRegion} /><button className="profile-jump" onClick={() => { openProfile(player.Runner); }}>Open full profile</button><button className="profile-jump" onClick={openRunnerLab}>Open Runner Lab</button></section>
     <section className="lab-panel milestone-panel"><div className="lab-panel-title"><div><span>Milestone Watch</span><h3>Concrete next steps for {player.Runner}</h3></div><Target size={22} /></div><p className="lab-explainer">Targets follow this runner&apos;s accepted hardware path and use frame-aware benchmarks from the included leaderboards. Points are estimates; Speedrun.com rules remain authoritative.</p><div className="milestone-grid">{cards.map((card) => <article className={`milestone-card ${card.tone}`} key={card.label}><span>{card.label}</span><strong>{card.title}</strong><b>{card.value}</b><small>{card.detail}</small></article>)}</div><div className="milestone-heading"><div><span>Priority queue</span><h4>Proof-backed goals</h4></div><span>{targets.length} candidates</span></div><div className="milestone-list">{targets.slice(0, 10).map((target, index) => <button key={`${target.board.boardKey}-${target.setupKey}`} onClick={openRunnerLab}><span className="milestone-index">{index + 1}</span><span className="milestone-copy"><strong>{gameNames[target.board.gameAbbr] || target.board.gameAbbr} · {insightBoardLabel(target.board)}</strong><small>{target.goalLabel} · {targetInstruction(target)} · {targetMeta(target)}</small></span><em>+{fmt(target.estimatedGain, 2)}<small>estimated</small></em></button>)}{!targets.length && <div className="rank-chase-empty"><Target size={20} /><span>No proof-backed targets are available for this runner under the current filters.</span></div>}</div></section>
   </div>;
 }
@@ -119,43 +132,48 @@ function MomentumLab({ players, runs, runner, setRunner, openProfile }: { player
   </div>;
 }
 
-function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames, openProfile }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void }) {
-  const pathBoards = useMemo(() => eligibleBoardsForRunner(player.Runner, boards, runs), [boards, player.Runner, runs]);
+function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames, openProfile, region, setRegion }: { player: InsightPlayer; players: InsightPlayer[]; runs: InsightRun[]; boards: InsightBoard[]; runner: string; setRunner: (runner: string) => void; gameNames: Record<string, string>; openProfile: (runner: string) => void; region: LabRegion; setRegion: (region: LabRegion) => void }) {
+  const pathBoards = useMemo(() => eligibleBoardsForRunner(player.Runner, boards, runs, region), [boards, player.Runner, region, runs]);
   const boardMap = useMemo(() => new Map(pathBoards.map((board) => [board.boardKey, board])), [pathBoards]);
-  const targets = useMemo(() => nextTargets(player, runs, boards, 8), [boards, player, runs]);
+  const targets = useMemo(() => nextTargets(player, runs, boards, 8, region), [boards, player, region, runs]);
   const rivals = useMemo(() => runnerRivalries(player, runs, players, 5), [player, players, runs]);
   const archetype = useMemo(() => runnerArchetype(player), [player]);
-  const defaultScenario = useMemo(() => targets[0] ? [{ boardKey: targets[0].board.boardKey, time: targets[0].goalTime, setupKey: targets[0].setupKey }] : [], [targets]);
+  const defaultScenario = useMemo<Scenario[]>(() => targets[0] ? [{ boardKey: targets[0].board.boardKey, time: targets[0].goalTime, setupKey: targets[0].setupKey, region: targets[0].region === 'Unknown' ? region : targets[0].region }] : [], [region, targets]);
   const [scenarioState, setScenarioState] = useState<{ runner: string; rows: Scenario[] }>({ runner: player.Runner, rows: defaultScenario });
   const scenarios = scenarioState.runner === player.Runner ? scenarioState.rows : defaultScenario;
-  const timedScenarios = useMemo(() => scenarios.map((scenario) => ({ boardKey: scenario.boardKey, seconds: parseRunTime(scenario.time), setupKey: scenario.setupKey })), [scenarios]);
+  const timedScenarios = useMemo(() => scenarios.map((scenario) => ({ boardKey: scenario.boardKey, seconds: parseRunTime(scenario.time), setupKey: scenario.setupKey, region: scenario.region })), [scenarios]);
   const projection = useMemo(() => simulateRunnerScore(player, runs, boards, timedScenarios), [boards, player, runs, timedScenarios]);
   const newRank = projectedRank(players, player.Runner, projection.score);
   const defaultChaseRank = Math.max(1, Number(player.Rank || 1) - 5);
   const [chaseState, setChaseState] = useState({ runner: player.Runner, rank: defaultChaseRank });
   const chaseRank = chaseState.runner === player.Runner ? Math.min(player.Rank, chaseState.rank) : defaultChaseRank;
-  const chase = useMemo(() => rankChasePlan(player, players, runs, boards, chaseRank, 8), [boards, chaseRank, player, players, runs]);
+  const chase = useMemo(() => rankChasePlan(player, players, runs, boards, chaseRank, 8, region), [boards, chaseRank, player, players, region, runs]);
 
   function updateScenarios(updater: (rows: Scenario[]) => Scenario[]) {
     setScenarioState((current) => ({ runner: player.Runner, rows: updater(current.runner === player.Runner ? current.rows : defaultScenario) }));
   }
 
+  function setPlannerRegion(nextRegion: LabRegion) {
+    setRegion(nextRegion);
+    updateScenarios((rows) => rows.map((row) => ({ ...row, region: nextRegion })));
+  }
+
   function suggestedScenario(boardKey: string): Scenario {
     const target = targets.find((item) => item.board.boardKey === boardKey);
-    if (target) return { boardKey, time: target.goalTime, setupKey: target.setupKey };
+    if (target) return { boardKey, time: target.goalTime, setupKey: target.setupKey, region: target.region === 'Unknown' ? region : target.region };
     const board = boardMap.get(boardKey);
-    if (!board) return { boardKey, time: '0:00.000', setupKey: '' };
-    const setups = eligibleSetupsForRunner(player.Runner, board, runs);
+    if (!board) return { boardKey, time: '0:00.000', setupKey: '', region };
+    const setups = eligibleSetupsForRunner(player.Runner, board, runs, region);
     const existing = runs.find((run) => run.runner === player.Runner && run.boardKey === boardKey);
     const existingKey = existing ? setupKey(existing.platform, existing.hardware) : '';
     const setup = setups.find((item) => item.key === existingKey) || setups[0];
-    if (existing?.seconds && setup) return { boardKey, time: formatRunTime(existing.seconds), setupKey: setup.key };
+    if (existing?.seconds && setup) return { boardKey, time: formatRunTime(existing.seconds), setupKey: setup.key, region };
     const boardTimes = runs.filter((run) => run.boardKey === boardKey && run.seconds > 0 && setupKey(run.platform, run.hardware) === setup?.key).map((run) => run.seconds).sort((a, b) => a - b);
-    return { boardKey, time: boardTimes.length ? formatRunTime(boardTimes[Math.floor(boardTimes.length / 2)]) : '0:00.000', setupKey: setup?.key || '' };
+    return { boardKey, time: boardTimes.length ? formatRunTime(boardTimes[Math.floor(boardTimes.length / 2)]) : '0:00.000', setupKey: setup?.key || '', region };
   }
 
   return <div className="lab-stack">
-    <section className="lab-band runner-lab-header"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Run the numbers for" /><button className="profile-jump" onClick={() => openProfile(player.Runner)}>Open full profile</button></section>
+    <section className="lab-band runner-lab-header"><RunnerSearch players={players} value={runner} onChange={setRunner} label="Run the numbers for" /><RegionSelect value={region} onChange={setPlannerRegion} label="Planner region" /><button className="profile-jump" onClick={() => openProfile(player.Runner)}>Open full profile</button></section>
     <div className="lab-split">
       <section className="lab-panel simulator-panel">
         <div className="lab-panel-title"><div><span>What-if simulator</span><h3>Enter the times you want to achieve</h3></div><FlaskConical size={22} /></div>
@@ -163,12 +181,12 @@ function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames
         <div className="simulation-score"><div><span>Current</span><strong>#{player.Rank}</strong><small>{fmt(player['Total Score'], 2)} points</small></div><b>to</b><div className={newRank < player.Rank ? 'improved' : ''}><span>Projected</span><strong>#{newRank}</strong><small>{fmt(projection.score, 2)} points</small></div><em>{projection.delta >= 0 ? '+' : ''}{fmt(projection.delta, 2)}</em></div>
         <div className="scenario-list">{scenarios.map((scenario, index) => {
           const board = boardMap.get(scenario.boardKey);
-          const setups = board ? eligibleSetupsForRunner(player.Runner, board, runs) : [];
+          const setups = board ? eligibleSetupsForRunner(player.Runner, board, runs, scenario.region) : [];
           const setup = setups.find((item) => item.key === scenario.setupKey) || setups[0] || null;
           const enteredSeconds = parseRunTime(scenario.time);
-          const adjustedSeconds = board ? scenarioSeconds(player.Runner, board, scenario.setupKey, enteredSeconds, runs) : enteredSeconds;
+          const adjustedSeconds = board ? scenarioSeconds(player.Runner, board, scenario.setupKey, enteredSeconds, runs, scenario.region) : enteredSeconds;
           const place = projectedPlaceForTime(player.Runner, scenario.boardKey, adjustedSeconds, runs);
-          return <div className="scenario-row" key={`${player.Runner}-${index}`}><label><span>Board</span><select value={scenario.boardKey} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? suggestedScenario(event.target.value) : row))}>{pathBoards.map((item) => <option value={item.boardKey} key={item.boardKey}>{gameNames[item.gameAbbr] || item.gameAbbr} - {insightBoardLabel(item)}</option>)}</select></label><label><span>Setup</span><select value={setup?.key || ''} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, setupKey: event.target.value } : row))}>{setups.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select><small>{setup ? `${setup.cadenceLabel} · ${setup.sample} accepted` : 'No demonstrated setup'}</small></label><label className="time-field"><span>Target time</span><input type="text" inputMode="decimal" value={scenario.time} placeholder="4:55.000" onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, time: event.target.value } : row))} /><small>{place ? `Frame target ${formatRunTime(adjustedSeconds)} · about #${place}` : 'Enter m:ss.mmm'}</small></label><button className="icon-button" title="Remove scenario" aria-label="Remove scenario" onClick={() => updateScenarios((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} /></button></div>;
+          return <div className="scenario-row" key={`${player.Runner}-${index}`}><label><span>Board</span><select value={scenario.boardKey} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? suggestedScenario(event.target.value) : row))}>{pathBoards.map((item) => <option value={item.boardKey} key={item.boardKey}>{gameNames[item.gameAbbr] || item.gameAbbr} - {insightBoardLabel(item)}</option>)}</select></label><label><span>Setup</span><select value={setup?.key || ''} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, setupKey: event.target.value } : row))}>{setups.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select><small>{setup ? `${setup.cadenceLabel} · ${setup.sample} accepted${setup.regionExact ? '' : ' · fallback data'}` : 'No demonstrated setup'}</small></label><label className="scenario-region"><span>Region</span><select value={scenario.region} onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, region: event.target.value as LabRegion } : row))}>{LAB_REGIONS.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select><small>{setup?.region === 'Unknown' ? 'Metadata pending' : setup?.region || 'Choose path'}</small></label><label className="time-field"><span>Target time</span><input type="text" inputMode="decimal" value={scenario.time} placeholder="4:55.000" onChange={(event) => updateScenarios((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, time: event.target.value } : row))} /><small>{place ? `Frame target ${formatRunTime(adjustedSeconds)} · about #${place}` : 'Enter m:ss.mmm'}</small></label><button className="icon-button" title="Remove scenario" aria-label="Remove scenario" onClick={() => updateScenarios((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} /></button></div>;
         })}</div>
         <button className="add-scenario" disabled={scenarios.length >= 8 || !pathBoards.length} onClick={() => updateScenarios((rows) => { const next = targets.find((target) => !rows.some((row) => row.boardKey === target.board.boardKey)); const boardKey = next?.board.boardKey || pathBoards.find((board) => !rows.some((row) => row.boardKey === board.boardKey))?.boardKey || pathBoards[0]?.boardKey || ''; return [...rows, suggestedScenario(boardKey)]; })}><Plus size={15} /> Add target time</button>
         <div className="projection-breakdown"><span>Performance <strong>{projection.performanceDelta >= 0 ? '+' : ''}{fmt(projection.performanceDelta, 2)}</strong></span><span>Volume <strong>+{fmt(projection.volumeDelta, 2)}</strong></span><span>Variety <strong>{projection.varietyDelta >= 0 ? '+' : ''}{fmt(projection.varietyDelta, 2)}</strong></span></div>
@@ -177,13 +195,13 @@ function RunnerLab({ player, players, runs, boards, runner, setRunner, gameNames
     </div>
     <section className="lab-panel rank-chase-panel">
       <div className="lab-panel-title"><div><span>Rank chase planner</span><h3>Turn an overall-rank goal into a timed route</h3></div><Route size={22} /></div>
-      <div className="rank-chase-toolbar"><label><span>Desired overall rank</span><input type="number" min="1" max={Math.max(1, player.Rank)} value={chaseRank} disabled={player.Rank === 1} onChange={(event) => setChaseState({ runner: player.Runner, rank: Math.max(1, Math.min(player.Rank, Number(event.target.value || 1))) })} /></label><div><span>Points to catch</span><strong>{chase.requiredGain > 0 ? `+${fmt(chase.requiredGain, 2)}` : 'Already there'}</strong><small>{chase.targetScore > player['Total Score'] ? `${fmt(chase.targetScore, 2)} points clears the line` : `${player.Runner} already owns this position`}</small></div><div><span>Planner result</span><strong>{chase.steps.length ? `Projected #${chase.projectedRank}` : `Current #${player.Rank}`}</strong><small>{chase.reached ? `${chase.steps.length} route-aligned goal${chase.steps.length === 1 ? '' : 's'} found` : chase.remainingGap > 0 ? `${fmt(chase.remainingGap, 2)} points still needed` : 'Choose a higher position'}</small></div><button className="profile-jump" disabled={!chase.steps.length} onClick={() => updateScenarios(() => chase.steps.map((step) => ({ boardKey: step.target.board.boardKey, time: step.target.goalTime, setupKey: step.target.setupKey })))}>Load route into simulator</button></div>
+      <div className="rank-chase-toolbar"><label><span>Desired overall rank</span><input type="number" min="1" max={Math.max(1, player.Rank)} value={chaseRank} disabled={player.Rank === 1} onChange={(event) => setChaseState({ runner: player.Runner, rank: Math.max(1, Math.min(player.Rank, Number(event.target.value || 1))) })} /></label><div><span>Region path</span><strong>{region}</strong><small>Change it above to rebuild this route</small></div><div><span>Points to catch</span><strong>{chase.requiredGain > 0 ? `+${fmt(chase.requiredGain, 2)}` : 'Already there'}</strong><small>{chase.targetScore > player['Total Score'] ? `${fmt(chase.targetScore, 2)} points clears the line` : `${player.Runner} already owns this position`}</small></div><div><span>Planner result</span><strong>{chase.steps.length ? `Projected #${chase.projectedRank}` : `Current #${player.Rank}`}</strong><small>{chase.reached ? `${chase.steps.length} route-aligned goal${chase.steps.length === 1 ? '' : 's'} found` : chase.remainingGap > 0 ? `${fmt(chase.remainingGap, 2)} points still needed` : 'Choose a higher position'}</small></div><button className="profile-jump" disabled={!chase.steps.length} onClick={() => updateScenarios(() => chase.steps.map((step) => ({ boardKey: step.target.board.boardKey, time: step.target.goalTime, setupKey: step.target.setupKey, region: step.target.region === 'Unknown' ? region : step.target.region })))}>Load route into simulator</button></div>
       {chase.steps.length ? <div className="rank-chase-route">{chase.steps.map((step, index) => <article key={step.target.board.boardKey} title={targetMeta(step.target)}><span>{index + 1}</span><div><strong>{gameNames[step.target.board.gameAbbr] || step.target.board.gameAbbr} - {insightBoardLabel(step.target.board)}</strong><small>{step.target.goalLabel}: {targetInstruction(step.target)} for about #{step.target.proposedPlace}</small><small className="target-meta">{targetMeta(step.target)}</small></div><em>+{fmt(step.gain, 2)}</em><b>then #{step.projectedRank}</b></article>)}</div> : <div className="rank-chase-empty"><Trophy size={20} /><span>{player.Rank === 1 ? `${player.Runner} is already at the top.` : 'No proof-backed route on this runner\'s demonstrated setups reaches that rank yet.'}</span></div>}
       <p className="rank-chase-note">Routes are ranked by score gain versus placement difficulty. They never invent a sub-frame time, recommend an unseen setup, or promise that a sparse board is easy. Platform eligibility is inferred from accepted runs; the linked Speedrun.com rules remain authoritative.</p>
     </section>
     <div className="lab-split lower">
       <section className="lab-panel"><div className="lab-panel-title"><div><span>Rivalry network</span><h3>Closest competitive neighbors</h3></div><Network size={21} /></div><p className="lab-explainer">Rivals are runners who share many boards with you, especially where the placements are close.</p><div className="rivalry-network"><button className="rival-center" onClick={() => openProfile(player.Runner)}><FlagChip url={player['Flag URL']} /><strong>{player.Runner}</strong><small>#{player.Rank}</small></button>{rivals.map((rival) => <button className="rival-node" onClick={() => openProfile(rival.runner)} key={rival.runner}><FlagChip url={rival.flagUrl} /><span><strong>{rival.runner}</strong><small>{rival.shared} shared boards · {rival.close} within 3 places</small></span><span className="rival-record"><b>You lead {rival.wins}</b><small>You trail {rival.losses}</small></span></button>)}</div></section>
-      <section className="lab-panel"><div className="lab-panel-title"><div><span>Concrete goals</span><h3>Best route-aligned score gains</h3></div><Target size={21} /></div><p className="lab-explainer">Every target is an accepted time on a setup this runner already uses. New categories need at least three accepted setup-matched runs before they can be recommended.</p><div className="target-list">{targets.slice(0, 6).map((target) => <button key={target.board.boardKey} title={targetMeta(target)} onClick={() => updateScenarios(() => [{ boardKey: target.board.boardKey, time: target.goalTime, setupKey: target.setupKey }])}><Clock3 size={15} /><span><strong>{gameNames[target.board.gameAbbr] || target.board.gameAbbr} - {insightBoardLabel(target.board)}</strong><small>{target.goalLabel}: {targetInstruction(target)} for about #{target.proposedPlace}</small><small className="target-meta">{targetMeta(target)}</small></span><em>+{fmt(target.estimatedGain, 2)}</em></button>)}{!targets.length && <p className="rank-chase-empty">No proof-backed goal is available on this runner&apos;s demonstrated setups.</p>}</div></section>
+      <section className="lab-panel"><div className="lab-panel-title"><div><span>Concrete goals</span><h3>Best route-aligned score gains</h3></div><Target size={21} /></div><p className="lab-explainer">Every target is an accepted time on a setup this runner already uses. New categories need at least three accepted setup-matched runs before they can be recommended.</p><div className="target-list">{targets.slice(0, 6).map((target) => <button key={target.board.boardKey} title={targetMeta(target)} onClick={() => updateScenarios(() => [{ boardKey: target.board.boardKey, time: target.goalTime, setupKey: target.setupKey, region: target.region === 'Unknown' ? region : target.region }])}><Clock3 size={15} /><span><strong>{gameNames[target.board.gameAbbr] || target.board.gameAbbr} - {insightBoardLabel(target.board)}</strong><small>{target.goalLabel}: {targetInstruction(target)} for about #{target.proposedPlace}</small><small className="target-meta">{targetMeta(target)}</small></span><em>+{fmt(target.estimatedGain, 2)}</em></button>)}{!targets.length && <p className="rank-chase-empty">No proof-backed goal is available on this runner&apos;s demonstrated setups.</p>}</div></section>
     </div>
   </div>;
 }

@@ -35,8 +35,11 @@ export type InsightRun = {
   country: string | null;
   platform: string | null;
   hardware: string | null;
+  region?: string | null;
   verifiedAt?: string | null;
 };
+
+export type LabRegion = 'Auto' | 'NTSC-U' | 'NTSC-J' | 'PAL';
 
 export type InsightCareerRun = {
   id?: string;
@@ -95,6 +98,8 @@ export type Target = {
   goalLabel: string;
   setupKey: string;
   setupLabel: string;
+  region: Exclude<LabRegion, 'Auto'> | 'Unknown';
+  regionExact: boolean;
   setupSample: number;
   cadenceFps: number | null;
   cadenceLabel: string;
@@ -110,6 +115,8 @@ export type InsightSetup = {
   key: string;
   platform: string;
   hardware: string | null;
+  region: Exclude<LabRegion, 'Auto'> | 'Unknown';
+  regionExact: boolean;
   label: string;
   sample: number;
   fps: number | null;
@@ -281,17 +288,35 @@ function boardText(board: Pick<InsightBoard, 'category' | 'level' | 'subcategory
 function boardRegion(board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'> | Pick<InsightRun, 'category' | 'level' | 'subcategory'>) {
   const text = boardText(board);
   if (/\bPAL\b/i.test(text)) return 'PAL';
-  if (/\bNTSC\b/i.test(text)) return 'NTSC';
-  return 'Any';
+  if (/NTSC[- /]?J|JPN|JAPAN/i.test(text)) return 'NTSC-J';
+  if (/NTSC[- /]?U|USA|UNITED STATES/i.test(text)) return 'NTSC-U';
+  return 'Unknown';
+}
+
+export function normalizeRunRegion(value: string | null | undefined) {
+  const text = String(value || '').trim();
+  if (/PAL/i.test(text)) return 'PAL' as const;
+  if (/NTSC[- /]?J|JPN|JAPAN/i.test(text)) return 'NTSC-J' as const;
+  if (/NTSC[- /]?U|USA|UNITED STATES/i.test(text)) return 'NTSC-U' as const;
+  return 'Unknown' as const;
+}
+
+function effectiveRunRegion(run: Pick<InsightRun, 'region' | 'platform' | 'category' | 'level' | 'subcategory'>) {
+  const explicit = normalizeRunRegion(run.region);
+  if (explicit !== 'Unknown') return explicit;
+  const fromBoard = boardRegion(run);
+  if (fromBoard !== 'Unknown') return fromBoard;
+  if (/famicom/i.test(String(run.platform || ''))) return 'NTSC-J' as const;
+  return 'Unknown' as const;
 }
 
 export function setupKey(platform: string | null | undefined, hardware: string | null | undefined) {
   return `${String(platform || 'Unknown platform')}|||${String(hardware || '')}`;
 }
 
-function cadenceFor(platform: string, board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'>) {
+function cadenceFor(platform: string, board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'>, region: Exclude<LabRegion, 'Auto'> | 'Unknown') {
   const normalized = platform.toLocaleLowerCase();
-  if (boardRegion(board) === 'PAL') return { fps: 50, label: '50 Hz PAL' };
+  if (region === 'PAL' || boardRegion(board) === 'PAL') return { fps: 50, label: '50 Hz PAL' };
   if (normalized.includes('switch')) return { fps: 60, label: '60 Hz Switch' };
   if (normalized.includes('wii virtual console') || normalized.includes('wii u virtual console')) return { fps: 60000 / 1001, label: '59.94 Hz Virtual Console' };
   if (normalized.includes('game boy advance')) return { fps: 59.7275, label: '59.73 Hz GBA' };
@@ -307,41 +332,48 @@ export function quantizeRunTime(seconds: number, setup: Pick<InsightSetup, 'fps'
   return Math.max(1 / setup.fps, Math.round(seconds * setup.fps) / setup.fps);
 }
 
-function sameRegionPath(target: InsightBoard, setup: InsightSetup, ownRuns: InsightRun[]) {
-  const region = boardRegion(target);
-  if (region === 'Any') return true;
-  return ownRuns.some((run) => setupKey(run.platform, run.hardware) === setup.key && boardRegion(run) === region);
+function regionRuns(runs: InsightRun[], requestedRegion: LabRegion) {
+  if (requestedRegion === 'Auto') return runs;
+  const exact = runs.filter((run) => effectiveRunRegion(run) === requestedRegion);
+  if (exact.length) return exact;
+  return runs.filter((run) => effectiveRunRegion(run) === 'Unknown');
 }
 
-export function eligibleSetupsForRunner(runner: string, board: InsightBoard, runs: InsightRun[]): InsightSetup[] {
+export function eligibleSetupsForRunner(runner: string, board: InsightBoard, runs: InsightRun[], requestedRegion: LabRegion = 'Auto'): InsightSetup[] {
   const ownRuns = runs.filter((run) => run.runner === runner);
   const ownSetupKeys = new Set(ownRuns.map((run) => setupKey(run.platform, run.hardware)));
   const boardRuns = runs.filter((run) => run.boardKey === board.boardKey && run.platform);
-  const grouped = new Map<string, { platform: string; hardware: string | null; sample: number }>();
+  const preferredBoardRuns = regionRuns(boardRuns, requestedRegion);
+  const grouped = new Map<string, { platform: string; hardware: string | null; sample: number; regions: Map<string, number> }>();
   for (const run of boardRuns) {
     const key = setupKey(run.platform, run.hardware);
-    const current = grouped.get(key) || { platform: String(run.platform), hardware: run.hardware, sample: 0 };
-    current.sample += 1;
+    const current = grouped.get(key) || { platform: String(run.platform), hardware: run.hardware, sample: 0, regions: new Map<string, number>() };
+    if (preferredBoardRuns.includes(run)) current.sample += 1;
+    const region = effectiveRunRegion(run);
+    current.regions.set(region, (current.regions.get(region) || 0) + 1);
     grouped.set(key, current);
   }
   return Array.from(grouped.entries()).map(([key, value]) => {
-    const cadence = cadenceFor(value.platform, board);
-    return { key, ...value, label: [value.platform, value.hardware].filter(Boolean).join(' · '), fps: cadence.fps, cadenceLabel: cadence.label };
-  }).filter((candidate) => ownSetupKeys.has(candidate.key) && sameRegionPath(board, candidate, ownRuns)).sort((a, b) => b.sample - a.sample || a.label.localeCompare(b.label));
+    const inferred = Array.from(value.regions.entries()).filter(([region]) => region !== 'Unknown').sort((a, b) => b[1] - a[1])[0]?.[0] as Exclude<LabRegion, 'Auto'> | undefined;
+    const region: InsightSetup['region'] = requestedRegion === 'Auto' ? inferred || boardRegion(board) : requestedRegion;
+    const regionExact = requestedRegion === 'Auto' || value.regions.has(requestedRegion);
+    const cadence = cadenceFor(value.platform, board, region);
+    return { key, platform: value.platform, hardware: value.hardware, region, regionExact, sample: value.sample, label: [value.platform, value.hardware].filter(Boolean).join(' · '), fps: cadence.fps, cadenceLabel: cadence.label };
+  }).filter((candidate) => ownSetupKeys.has(candidate.key) && candidate.sample > 0).sort((a, b) => b.sample - a.sample || a.label.localeCompare(b.label));
 }
 
-export function eligibleBoardsForRunner(runner: string, boards: InsightBoard[], runs: InsightRun[]) {
+export function eligibleBoardsForRunner(runner: string, boards: InsightBoard[], runs: InsightRun[], requestedRegion: LabRegion = 'Auto') {
   const ownBoards = new Set(runs.filter((run) => run.runner === runner).map((run) => run.boardKey));
-  return boards.filter((board) => ownBoards.has(board.boardKey) || eligibleSetupsForRunner(runner, board, runs).length > 0);
+  return boards.filter((board) => ownBoards.has(board.boardKey) || eligibleSetupsForRunner(runner, board, runs, requestedRegion).length > 0);
 }
 
-export function setupForScenario(runner: string, board: InsightBoard, requestedKey: string | undefined, runs: InsightRun[]) {
-  const setups = eligibleSetupsForRunner(runner, board, runs);
+export function setupForScenario(runner: string, board: InsightBoard, requestedKey: string | undefined, runs: InsightRun[], requestedRegion: LabRegion = 'Auto') {
+  const setups = eligibleSetupsForRunner(runner, board, runs, requestedRegion);
   return setups.find((setup) => setup.key === requestedKey) || setups[0] || null;
 }
 
-export function scenarioSeconds(runner: string, board: InsightBoard, requestedKey: string | undefined, seconds: number, runs: InsightRun[]) {
-  return quantizeRunTime(seconds, setupForScenario(runner, board, requestedKey, runs));
+export function scenarioSeconds(runner: string, board: InsightBoard, requestedKey: string | undefined, seconds: number, runs: InsightRun[], requestedRegion: LabRegion = 'Auto') {
+  return quantizeRunTime(seconds, setupForScenario(runner, board, requestedKey, runs, requestedRegion));
 }
 
 export function projectedPlaceForTime(runner: string, boardKey: string, seconds: number, runs: InsightRun[]) {
@@ -445,7 +477,9 @@ function difficultyFor(place: number, size: number, recordTieCount: number) {
 }
 
 function chooseBenchmark(runner: string, board: InsightBoard, setup: InsightSetup, desiredPlace: number, existing: InsightRun | undefined, runs: InsightRun[]) {
-  const setupRuns = runs.filter((run) => run.boardKey === board.boardKey && setupKey(run.platform, run.hardware) === setup.key && run.runner !== runner && Number(run.seconds || 0) > 0);
+  const allSetupRuns = runs.filter((run) => run.boardKey === board.boardKey && setupKey(run.platform, run.hardware) === setup.key && run.runner !== runner && Number(run.seconds || 0) > 0);
+  const exactRegionRuns = setup.region === 'Unknown' ? [] : allSetupRuns.filter((run) => effectiveRunRegion(run) === setup.region);
+  const setupRuns = exactRegionRuns.length ? exactRegionRuns : allSetupRuns.filter((run) => effectiveRunRegion(run) === 'Unknown');
   if (!existing && setupRuns.length < 3) return null;
   const candidates = existing ? setupRuns.filter((run) => Number(run.seconds) < Number(existing.seconds) - TIME_TOLERANCE) : setupRuns;
   const lowerBound = desiredPlace <= 5 ? 1 : Math.max(1, Math.floor(desiredPlace * 0.6));
@@ -456,7 +490,7 @@ function chooseBenchmark(runner: string, board: InsightBoard, setup: InsightSetu
   return pool.sort((a, b) => Math.abs(Number(a.place) - desiredPlace) - Math.abs(Number(b.place) - desiredPlace) || Number(b.place) - Number(a.place) || Number(b.seconds) - Number(a.seconds))[0] || null;
 }
 
-export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], limit = 8): Target[] {
+export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], limit = 8, requestedRegion: LabRegion = 'Auto'): Target[] {
   const ownRuns = runs.filter((run) => run.runner === player.Runner);
   const ownByBoard = new Map(ownRuns.map((run) => [run.boardKey, run]));
   const typicalPercentile = Math.min(0.8, Math.max(0.02, median(ownRuns.filter((run) => run.boardSize > 0).map((run) => run.place / run.boardSize))));
@@ -474,7 +508,7 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
     const recordTime = Math.min(...boardRuns.map((run) => Number(run.seconds)));
     const recordTieCount = boardRuns.filter((run) => Math.abs(Number(run.seconds) - recordTime) <= TIME_TOLERANCE).length;
     const setupTargets: Target[] = [];
-    for (const setup of eligibleSetupsForRunner(player.Runner, board, runs)) {
+    for (const setup of eligibleSetupsForRunner(player.Runner, board, runs, requestedRegion)) {
       const benchmark = chooseBenchmark(player.Runner, board, setup, desiredPlace, existing, runs);
       if (!benchmark) continue;
       const goalSeconds = quantizeRunTime(Number(benchmark.seconds), setup);
@@ -491,7 +525,7 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
       const movement = existing ? Math.max(0, (Number(existing.place) - estimatedPlace) / Math.max(1, Number(existing.place))) : 0.2;
       let effort = 1 + (1 - percentile) * 3 + movement * 2 + (setup.sample < 10 ? 0.75 : 0);
       if (estimatedPlace === 1 && recordTieCount > 1) effort = Math.max(effort, 3);
-      const sameSetup = existing && setupKey(existing.platform, existing.hardware) === setup.key;
+      const sameSetup = existing && setupKey(existing.platform, existing.hardware) === setup.key && (requestedRegion === 'Auto' || effectiveRunRegion(existing) === requestedRegion);
       const framesToFind = sameSetup && setup.fps ? Math.max(1, Math.round((Number(existing.seconds) - goalSeconds) * setup.fps)) : null;
       setupTargets.push({
         board,
@@ -506,6 +540,8 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
         goalLabel: targetLabel(existing ? Number(existing.place) : null, estimatedPlace, recordTieCount),
         setupKey: setup.key,
         setupLabel: setup.label,
+        region: setup.region,
+        regionExact: setup.regionExact,
         setupSample: setup.sample,
         cadenceFps: setup.fps,
         cadenceLabel: setup.cadenceLabel,
@@ -525,7 +561,7 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
   return targets.sort((a, b) => b.routeValue - a.routeValue || b.estimatedGain - a.estimatedGain || b.board.runCount - a.board.runCount).slice(0, limit);
 }
 
-export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number; setupKey?: string }>) {
+export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number; setupKey?: string; region?: LabRegion }>) {
   const ownRuns = runs.filter((run) => run.runner === player.Runner);
   const ownByBoard = new Map(ownRuns.map((run) => [run.boardKey, run]));
   const boardMap = new Map(boards.map((board) => [board.boardKey, board]));
@@ -538,7 +574,7 @@ export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], b
     if (!board) continue;
     const existing = ownByBoard.get(scenario.boardKey);
     const size = Math.max(1, Number(board.runCount || 0) + (existing ? 0 : 1));
-    const adjustedSeconds = scenarioSeconds(player.Runner, board, scenario.setupKey, scenario.seconds, runs);
+    const adjustedSeconds = scenarioSeconds(player.Runner, board, scenario.setupKey, scenario.seconds, runs, scenario.region);
     const place = projectedPlaceForTime(player.Runner, scenario.boardKey, adjustedSeconds, runs);
     performanceDelta += runPerformanceScore(Math.min(size, place), size) - Number(existing?.performancePoints || 0);
     if (!existing) addedRuns += 1;
@@ -556,12 +592,12 @@ export function projectedRank(players: InsightPlayer[], runner: string, score: n
   return 1 + players.filter((player) => player.Runner !== runner && Number(player['Total Score']) > score).length;
 }
 
-export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], runs: InsightRun[], boards: InsightBoard[], requestedRank: number, maxGoals = 8): RankChasePlan {
+export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], runs: InsightRun[], boards: InsightBoard[], requestedRank: number, maxGoals = 8, requestedRegion: LabRegion = 'Auto'): RankChasePlan {
   const targetRank = Math.max(1, Math.min(Number(player.Rank || 1), Math.floor(Number(requestedRank || 1))));
   const otherScores = players.filter((item) => item.Runner !== player.Runner).map((item) => Number(item['Total Score'] || 0)).sort((a, b) => b - a);
   const targetScore = targetRank >= player.Rank ? Number(player['Total Score'] || 0) : Number(otherScores[Math.max(0, targetRank - 1)] || 0) + 0.01;
   const requiredGain = Math.max(0, targetScore - Number(player['Total Score'] || 0));
-  const candidates = nextTargets(player, runs, boards, Math.max(boards.length, maxGoals)).slice(0, 48);
+  const candidates = nextTargets(player, runs, boards, Math.max(boards.length, maxGoals), requestedRegion).slice(0, 48);
   const chosen: Target[] = [];
   const steps: RankChaseStep[] = [];
   let projection = simulateRunnerScore(player, runs, boards, []);
@@ -571,7 +607,7 @@ export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], r
     for (const target of candidates) {
       if (chosen.some((item) => item.board.boardKey === target.board.boardKey)) continue;
       const trialTargets = [...chosen, target];
-      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds, setupKey: item.setupKey })));
+      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds, setupKey: item.setupKey, region: item.region === 'Unknown' ? 'Auto' : item.region })));
       const gain = trial.score - projection.score;
       const bestGain = best ? best.projection.score - projection.score : 0;
       if (!best || gain / Math.max(1, target.effort) > bestGain / Math.max(1, best.target.effort)) best = { target, projection: trial };
