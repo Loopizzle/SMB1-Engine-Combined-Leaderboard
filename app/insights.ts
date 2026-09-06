@@ -13,6 +13,7 @@ export type InsightPlayer = {
   'Unique Games': number;
   WRs: number;
   'Top 3s': number;
+  'Medal Score': number;
   'Average Place': number;
 };
 
@@ -28,6 +29,7 @@ export type InsightRun = {
   place: number;
   boardSize: number;
   performancePoints: number;
+  medalPoints: number;
   wrCredit: number;
   seconds: number;
   time: string;
@@ -60,6 +62,7 @@ export type InsightCareerRun = {
   verifiedAt?: string | null;
   time?: string;
   runLink?: string;
+  region?: string | null;
 };
 
 export type InsightBoard = {
@@ -90,6 +93,7 @@ export type Target = {
   currentPlace: number | null;
   proposedPlace: number;
   performanceGain: number;
+  medalGain: number;
   estimatedGain: number;
   missing: boolean;
   currentSeconds: number | null;
@@ -280,6 +284,7 @@ export function parseRunTime(value: string) {
 
 export const NES_NTSC_FPS = 39375000 / 655171;
 const TIME_TOLERANCE = 0.00075;
+const REGIONAL_MEDAL_MIN_FIELD = 3;
 
 function boardText(board: Pick<InsightBoard, 'category' | 'level' | 'subcategory'> | Pick<InsightRun, 'category' | 'level' | 'subcategory'>) {
   return [board.category, board.level, board.subcategory].filter(Boolean).join(' ');
@@ -379,6 +384,57 @@ export function scenarioSeconds(runner: string, board: InsightBoard, requestedKe
 export function projectedPlaceForTime(runner: string, boardKey: string, seconds: number, runs: InsightRun[]) {
   if (!boardKey || !Number.isFinite(seconds) || seconds <= 0) return 0;
   return 1 + runs.filter((run) => run.boardKey === boardKey && run.runner !== runner && Number(run.seconds || 0) > 0 && Number(run.seconds) < seconds - TIME_TOLERANCE).length;
+}
+
+function bestRunForBoard(runner: string, boardKey: string, runs: InsightRun[]) {
+  return runs.filter((run) => run.runner === runner && run.boardKey === boardKey).reduce<InsightRun | undefined>((best, run) => {
+    if (!best) return run;
+    const bestSeconds = Number(best.seconds || 0);
+    const runSeconds = Number(run.seconds || 0);
+    return runSeconds > 0 && (bestSeconds <= 0 || runSeconds < bestSeconds - TIME_TOLERANCE) ? run : best;
+  }, undefined);
+}
+
+export function medalScoreForPlace(place: number) {
+  if (place === 1) return 6;
+  if (place === 2) return 4;
+  if (place === 3) return 3;
+  if (place >= 4 && place <= 10) return 1;
+  return 0;
+}
+
+const regionalBestCache = new WeakMap<InsightCareerRun[], Map<string, Map<string, number>>>();
+
+function regionalBestRuns(acceptedRuns: InsightCareerRun[]) {
+  const cached = regionalBestCache.get(acceptedRuns);
+  if (cached) return cached;
+  const index = new Map<string, Map<string, number>>();
+  acceptedRuns.forEach((run) => {
+    const explicitRegion = normalizeRunRegion(run.region);
+    const region = explicitRegion !== 'Unknown' ? explicitRegion : boardRegion(run);
+    const seconds = Number(run.seconds || 0);
+    if (!run.boardKey || region === 'Unknown' || seconds <= 0) return;
+    const key = `${run.boardKey}|||${region}`;
+    const runners = index.get(key) || new Map<string, number>();
+    const runnerKey = String(run.playerKey || run.runner);
+    const current = runners.get(runnerKey);
+    if (current === undefined || seconds < current - TIME_TOLERANCE) runners.set(runnerKey, seconds);
+    index.set(key, runners);
+  });
+  regionalBestCache.set(acceptedRuns, index);
+  return index;
+}
+
+export function regionalPlacementForTime(player: Pick<InsightPlayer, 'Runner' | 'playerKey'>, boardKey: string, seconds: number, region: LabRegion | undefined, acceptedRuns: InsightCareerRun[]) {
+  if (!region || region === 'Auto' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const targetKey = String(player.playerKey || player.Runner);
+  const bestByRunner = new Map(regionalBestRuns(acceptedRuns).get(`${boardKey}|||${region}`) || []);
+  const existing = bestByRunner.get(targetKey);
+  bestByRunner.set(targetKey, existing ? Math.min(existing, seconds) : seconds);
+  if (bestByRunner.size < REGIONAL_MEDAL_MIN_FIELD) return null;
+  const targetSeconds = Number(bestByRunner.get(targetKey));
+  const place = 1 + Array.from(bestByRunner.entries()).filter(([key, time]) => key !== targetKey && time < targetSeconds - TIME_TOLERANCE).length;
+  return { place, fieldSize: bestByRunner.size };
 }
 
 export function runnerArchetype(player: InsightPlayer) {
@@ -490,7 +546,7 @@ function chooseBenchmark(runner: string, board: InsightBoard, setup: InsightSetu
   return pool.sort((a, b) => Math.abs(Number(a.place) - desiredPlace) - Math.abs(Number(b.place) - desiredPlace) || Number(b.place) - Number(a.place) || Number(b.seconds) - Number(a.seconds))[0] || null;
 }
 
-export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], limit = 8, requestedRegion: LabRegion = 'Auto'): Target[] {
+export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], limit = 8, requestedRegion: LabRegion = 'Auto', acceptedRuns: InsightCareerRun[] = runs): Target[] {
   const ownRuns = runs.filter((run) => run.runner === player.Runner);
   const ownByBoard = new Map(ownRuns.map((run) => [run.boardKey, run]));
   const typicalPercentile = Math.min(0.8, Math.max(0.02, median(ownRuns.filter((run) => run.boardSize > 0).map((run) => run.place / run.boardSize))));
@@ -515,11 +571,15 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
       const estimatedPlace = projectedPlaceForTime(player.Runner, board.boardKey, goalSeconds, runs);
       if (existing && estimatedPlace >= Number(existing.place)) continue;
       const performanceGain = Math.max(0, runPerformanceScore(estimatedPlace, size) - Number(existing?.performancePoints || 0));
+      const regionalPlacement = regionalPlacementForTime(player, board.boardKey, goalSeconds, setup.region === 'Unknown' ? 'Auto' : setup.region, acceptedRuns);
+      const currentMedal = Number(existing?.medalPoints || 0);
+      const projectedMedal = Math.max(currentMedal, medalScoreForPlace(estimatedPlace), medalScoreForPlace(Number(regionalPlacement?.place || 0)));
+      const medalGain = projectedMedal - currentMedal;
       const newGames = new Set(games);
       newGames.add(baseGameKey(board.gameAbbr));
       const volumeGain = existing ? 0 : Math.sqrt(Number(player['Prolific Score'] || 0) + 1) * 8 - oldVolume;
       const varietyGain = Math.max(0, newGames.size - 1) * 10 - oldVariety;
-      const estimatedGain = performanceGain + volumeGain + varietyGain;
+      const estimatedGain = performanceGain + volumeGain + varietyGain + medalGain;
       if (estimatedGain <= 0.05) continue;
       const percentile = (estimatedPlace - 1) / Math.max(1, size - 1);
       const movement = existing ? Math.max(0, (Number(existing.place) - estimatedPlace) / Math.max(1, Number(existing.place))) : 0.2;
@@ -532,6 +592,7 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
         currentPlace: existing ? Number(existing.place) : null,
         proposedPlace: estimatedPlace,
         performanceGain,
+        medalGain,
         estimatedGain,
         missing: !existing,
         currentSeconds: existing ? Number(existing.seconds || 0) : null,
@@ -561,53 +622,60 @@ export function nextTargets(player: InsightPlayer, runs: InsightRun[], boards: I
   return targets.sort((a, b) => b.routeValue - a.routeValue || b.estimatedGain - a.estimatedGain || b.board.runCount - a.board.runCount).slice(0, limit);
 }
 
-export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number; setupKey?: string; region?: LabRegion }>) {
+export function simulateRunnerScore(player: InsightPlayer, runs: InsightRun[], boards: InsightBoard[], scenarios: Array<{ boardKey: string; seconds: number; setupKey?: string; region?: LabRegion }>, acceptedRuns: InsightCareerRun[] = runs) {
   const ownRuns = runs.filter((run) => run.runner === player.Runner);
-  const ownByBoard = new Map(ownRuns.map((run) => [run.boardKey, run]));
   const boardMap = new Map(boards.map((board) => [board.boardKey, board]));
   const unique = new Map(scenarios.filter((scenario) => scenario.boardKey && scenario.seconds > 0).map((scenario) => [scenario.boardKey, scenario]));
   let performanceDelta = 0;
+  let medalDelta = 0;
   let addedRuns = 0;
   const games = new Set(ownRuns.map((run) => baseGameKey(run.gameToggle || run.gameAbbr)));
   for (const scenario of unique.values()) {
     const board = boardMap.get(scenario.boardKey);
     if (!board) continue;
-    const existing = ownByBoard.get(scenario.boardKey);
+    const existing = bestRunForBoard(player.Runner, scenario.boardKey, ownRuns);
     const size = Math.max(1, Number(board.runCount || 0) + (existing ? 0 : 1));
     const adjustedSeconds = scenarioSeconds(player.Runner, board, scenario.setupKey, scenario.seconds, runs, scenario.region);
-    const place = projectedPlaceForTime(player.Runner, scenario.boardKey, adjustedSeconds, runs);
-    performanceDelta += runPerformanceScore(Math.min(size, place), size) - Number(existing?.performancePoints || 0);
-    if (!existing) addedRuns += 1;
-    games.add(baseGameKey(board.gameAbbr));
+    const improvesOverall = !existing || Number(existing.seconds || 0) <= 0 || adjustedSeconds < Number(existing.seconds) - TIME_TOLERANCE;
+    const place = improvesOverall ? projectedPlaceForTime(player.Runner, scenario.boardKey, adjustedSeconds, runs) : Number(existing?.place || 0);
+    if (improvesOverall) {
+      performanceDelta += Math.max(0, runPerformanceScore(Math.min(size, place), size) - Number(existing?.performancePoints || 0));
+      if (!existing) addedRuns += 1;
+      games.add(baseGameKey(board.gameAbbr));
+    }
+    const regionalPlacement = regionalPlacementForTime(player, scenario.boardKey, adjustedSeconds, scenario.region, acceptedRuns);
+    const currentMedal = Number(existing?.medalPoints || 0);
+    const projectedMedal = Math.max(currentMedal, medalScoreForPlace(place), medalScoreForPlace(Number(regionalPlacement?.place || 0)));
+    medalDelta += projectedMedal - currentMedal;
   }
   const oldRuns = Number(player['Prolific Score'] || 0);
   const volumeDelta = Math.sqrt(oldRuns + addedRuns) * 8 - Math.sqrt(oldRuns) * 8;
   const projectedVariety = Math.max(0, games.size - 1) * 10;
   const varietyDelta = projectedVariety - Number(player['Variety Bonus'] || 0);
-  const delta = performanceDelta + volumeDelta + varietyDelta;
-  return { score: Number(player['Total Score'] || 0) + delta, delta, performanceDelta, volumeDelta, varietyDelta, addedRuns };
+  const delta = performanceDelta + volumeDelta + varietyDelta + medalDelta;
+  return { score: Number(player['Total Score'] || 0) + delta, delta, performanceDelta, volumeDelta, varietyDelta, medalDelta, addedRuns };
 }
 
 export function projectedRank(players: InsightPlayer[], runner: string, score: number) {
   return 1 + players.filter((player) => player.Runner !== runner && Number(player['Total Score']) > score).length;
 }
 
-export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], runs: InsightRun[], boards: InsightBoard[], requestedRank: number, maxGoals = 8, requestedRegion: LabRegion = 'Auto'): RankChasePlan {
+export function rankChasePlan(player: InsightPlayer, players: InsightPlayer[], runs: InsightRun[], boards: InsightBoard[], requestedRank: number, maxGoals = 8, requestedRegion: LabRegion = 'Auto', acceptedRuns: InsightCareerRun[] = runs): RankChasePlan {
   const targetRank = Math.max(1, Math.min(Number(player.Rank || 1), Math.floor(Number(requestedRank || 1))));
   const otherScores = players.filter((item) => item.Runner !== player.Runner).map((item) => Number(item['Total Score'] || 0)).sort((a, b) => b - a);
   const targetScore = targetRank >= player.Rank ? Number(player['Total Score'] || 0) : Number(otherScores[Math.max(0, targetRank - 1)] || 0) + 0.01;
   const requiredGain = Math.max(0, targetScore - Number(player['Total Score'] || 0));
-  const candidates = nextTargets(player, runs, boards, Math.max(boards.length, maxGoals), requestedRegion).slice(0, 48);
+  const candidates = nextTargets(player, runs, boards, Math.max(boards.length, maxGoals), requestedRegion, acceptedRuns).slice(0, 48);
   const chosen: Target[] = [];
   const steps: RankChaseStep[] = [];
-  let projection = simulateRunnerScore(player, runs, boards, []);
+  let projection = simulateRunnerScore(player, runs, boards, [], acceptedRuns);
 
   while (projection.score < targetScore && chosen.length < maxGoals) {
     let best: { target: Target; projection: ReturnType<typeof simulateRunnerScore> } | null = null;
     for (const target of candidates) {
       if (chosen.some((item) => item.board.boardKey === target.board.boardKey)) continue;
       const trialTargets = [...chosen, target];
-      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds, setupKey: item.setupKey, region: item.region === 'Unknown' ? 'Auto' : item.region })));
+      const trial = simulateRunnerScore(player, runs, boards, trialTargets.map((item) => ({ boardKey: item.board.boardKey, seconds: item.goalSeconds, setupKey: item.setupKey, region: item.region === 'Unknown' ? 'Auto' : item.region })), acceptedRuns);
       const gain = trial.score - projection.score;
       const bestGain = best ? best.projection.score - projection.score : 0;
       if (!best || gain / Math.max(1, target.effort) > bestGain / Math.max(1, best.target.effort)) best = { target, projection: trial };

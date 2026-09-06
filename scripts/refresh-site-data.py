@@ -284,6 +284,7 @@ def historical_career_runs(sheet, boards):
             "runDate": run_date,
             "verifiedAt": verified_at or None,
             "runLink": str(item.get("Run Link") or ""),
+            "region": str(item.get("Region") or "") or None,
         })
     return result
 
@@ -317,6 +318,7 @@ def merge_current_career_runs(career_runs, current_runs):
             "runDate": run.get("runDate") or (run.get("verifiedAt") or "")[:10] or None,
             "verifiedAt": run.get("verifiedAt"),
             "runLink": run.get("runLink") or "",
+            "region": run.get("region"),
         })
     return merged
 
@@ -456,6 +458,9 @@ def extract_payload(workbook_path):
                 "Board Key": "boardKey",
                 "Game Toggle": "gameToggle",
                 "Region": "region",
+                "Medal Place": "medalPlace",
+                "Medal Region": "medalRegion",
+                "Regional Field Size": "regionalFieldSize",
             })
             for item in dictionaries(rows_from(values["Runs"]))
         ]
