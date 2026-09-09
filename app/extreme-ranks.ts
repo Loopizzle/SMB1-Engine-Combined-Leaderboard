@@ -47,6 +47,10 @@ export type ExtremeScoredRun = {
   seconds: number;
   platform: null;
   hardware: null;
+  region?: string | null;
+  medalPlace?: number | null;
+  medalRegion?: string | null;
+  regionalFieldSize?: number | null;
   runDate: string | null;
   verifiedAt: string | null;
   runLink: string;
@@ -85,6 +89,137 @@ function baseGame(value: string) {
 
 function eventDate(run: InsightCareerRun) {
   return String(run.runDate || run.verifiedAt || '');
+}
+
+export function acceptedDate(run: InsightCareerRun) {
+  return String(run.verifiedAt || run.runDate || '').slice(0, 10);
+}
+
+function medalScore(place: number) {
+  if (place === 1) return 6;
+  if (place === 2) return 4;
+  if (place === 3) return 3;
+  if (place <= 10) return 1;
+  return 0;
+}
+
+function rankedRuns(runs: InsightCareerRun[]) {
+  const ranked = [...runs].sort((a, b) => Number(a.seconds) - Number(b.seconds) || acceptedDate(a).localeCompare(acceptedDate(b)) || String(a.id || '').localeCompare(String(b.id || '')));
+  let place = 1;
+  let previousSeconds: number | null = null;
+  return ranked.map((run, index) => {
+    const seconds = Number(run.seconds || 0);
+    if (previousSeconds !== null && Math.abs(seconds - previousSeconds) > 0.0005) place = index + 1;
+    previousSeconds = seconds;
+    return { run, place };
+  });
+}
+
+export function buildHistoricalRanks(careerRuns: InsightCareerRun[], currentPlayers: ExtremeSourcePlayer[]) {
+  const currentByKey = new Map(currentPlayers.filter((player) => player.playerKey).map((player) => [String(player.playerKey), player]));
+  const latestByKey = new Map<string, InsightCareerRun>();
+  const byBoard = new Map<string, InsightCareerRun[]>();
+
+  careerRuns.forEach((run) => {
+    const seconds = Number(run.seconds || 0);
+    if (!run.playerKey || !run.boardKey || !Number.isFinite(seconds) || seconds <= 0) return;
+    const previous = latestByKey.get(run.playerKey);
+    if (!previous || acceptedDate(run) >= acceptedDate(previous)) latestByKey.set(run.playerKey, run);
+    const boardRuns = byBoard.get(run.boardKey) || [];
+    boardRuns.push(run);
+    byBoard.set(run.boardKey, boardRuns);
+  });
+
+  const regionalAwards = new Map<string, { place: number; region: string; fieldSize: number }>();
+  byBoard.forEach((boardRuns, boardKey) => {
+    const byRegion = new Map<string, Map<string, InsightCareerRun>>();
+    boardRuns.forEach((run) => {
+      const region = String(run.region || '').trim();
+      if (!region) return;
+      const runners = byRegion.get(region) || new Map<string, InsightCareerRun>();
+      const previous = runners.get(run.playerKey);
+      if (!previous || Number(run.seconds) < Number(previous.seconds) - 0.0005) runners.set(run.playerKey, run);
+      byRegion.set(region, runners);
+    });
+    byRegion.forEach((runners, region) => {
+      if (runners.size < 3) return;
+      rankedRuns(Array.from(runners.values())).forEach(({ run, place }) => {
+        if (place > 10) return;
+        const key = `${run.playerKey}\u001f${boardKey}`;
+        const previous = regionalAwards.get(key);
+        if (!previous || place < previous.place) regionalAwards.set(key, { place, region, fieldSize: runners.size });
+      });
+    });
+  });
+
+  const scoredRuns: ExtremeScoredRun[] = [];
+  byBoard.forEach((boardRuns, boardKey) => {
+    const bestByPlayer = new Map<string, InsightCareerRun>();
+    boardRuns.forEach((run) => {
+      const previous = bestByPlayer.get(run.playerKey);
+      if (!previous || Number(run.seconds) < Number(previous.seconds) - 0.0005 || (Math.abs(Number(run.seconds) - Number(previous.seconds)) <= 0.0005 && acceptedDate(run) < acceptedDate(previous))) bestByPlayer.set(run.playerKey, run);
+    });
+    const ranked = rankedRuns(Array.from(bestByPlayer.values()));
+    ranked.forEach(({ run, place }, index) => {
+      const current = currentByKey.get(run.playerKey);
+      const latest = latestByKey.get(run.playerKey) || run;
+      const award = regionalAwards.get(`${run.playerKey}\u001f${boardKey}`);
+      const medalPlace = award && award.place < place ? award.place : place;
+      const runner = String(current?.Runner || latest.runner || run.runner || run.playerKey);
+      const country = current?.Country || latest.country || run.country || null;
+      const profile = String(current?.Profile || latest.profile || run.profile || '');
+      const performancePoints = runPerformanceScore(place, ranked.length);
+      scoredRuns.push({
+        id: String(run.id || `${boardKey}-${run.playerKey}-${index}`), included: true,
+        gameAbbr: run.gameAbbr, game: String(run.game || run.gameAbbr), scope: String(run.scope || 'Full Game'),
+        category: run.category, level: run.level, subcategory: run.subcategory, place, boardSize: ranked.length,
+        runner, country, time: run.time || formatRunTime(Number(run.seconds)), seconds: Number(run.seconds), platform: null, hardware: null,
+        region: run.region || null, medalPlace, medalRegion: award && award.place < place ? award.region : null,
+        regionalFieldSize: award && award.place < place ? award.fieldSize : null,
+        runDate: run.runDate, verifiedAt: run.verifiedAt || null, runLink: String(run.runLink || ''), playerKey: run.playerKey,
+        profile, performancePoints, medalPoints: medalScore(medalPlace), depthPoints: performancePoints,
+        wrCredit: medalPlace === 1 ? 1 : 0, top3Credit: medalPlace <= 3 ? 1 : 0, top10Credit: medalPlace <= 10 ? 1 : 0,
+        boardKey, gameToggle: run.gameToggle,
+      });
+    });
+  });
+
+  const groups = new Map<string, ExtremeGroup>();
+  scoredRuns.forEach((run) => {
+    const current = currentByKey.get(run.playerKey);
+    const group = groups.get(run.playerKey) || {
+      runner: run.runner, country: run.country, flagUrl: current?.['Flag URL'] || null, profile: run.profile,
+      performance: 0, runs: 0, boards: new Set<string>(), games: new Set<string>(), wrs: 0, top3s: 0,
+      top10s: 0, medal: 0, depth: 0, places: [],
+    };
+    group.performance += run.performancePoints;
+    group.runs += 1;
+    group.boards.add(run.boardKey);
+    group.games.add(baseGame(run.gameToggle));
+    group.wrs += run.wrCredit;
+    group.top3s += run.top3Credit;
+    group.top10s += run.top10Credit;
+    group.medal += run.medalPoints;
+    group.depth += run.depthPoints;
+    group.places.push(run.place);
+    groups.set(run.playerKey, group);
+  });
+
+  const players = Array.from(groups.entries()).map(([playerKey, group]) => {
+    const volume = Math.sqrt(group.runs) * 8;
+    const variety = Math.max(0, group.games.size - 1) * 10;
+    return {
+      Rank: 0, Runner: group.runner, Country: group.country, 'Flag URL': group.flagUrl,
+      'Total Score': group.performance + volume + variety + group.medal, 'Performance Score': group.performance,
+      'Volume Bonus': volume, 'Variety Bonus': variety, 'Prolific Score': group.runs,
+      'Unique Boards': group.boards.size, 'Unique Games': group.games.size, WRs: group.wrs,
+      'Top 3s': group.top3s, 'Top 10s': group.top10s, 'Medal Score': group.medal, 'Depth Score': group.depth,
+      'Average Place': group.places.reduce((sum, value) => sum + value, 0) / group.places.length,
+      Profile: group.profile, playerKey,
+    } satisfies ExtremePlayer;
+  }).sort((a, b) => b['Total Score'] - a['Total Score'] || b['Performance Score'] - a['Performance Score'] || a.Runner.localeCompare(b.Runner));
+
+  return { players: players.map((player, index) => ({ ...player, Rank: index + 1 })), runs: scoredRuns };
 }
 
 export function buildExtremeRanks(careerRuns: InsightCareerRun[], currentPlayers: ExtremeSourcePlayer[]) {

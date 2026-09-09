@@ -59,6 +59,49 @@ select { max-width:240px; padding:0 30px 0 10px; }
 .filter-button span { padding:2px 5px; background:#eceeed; color:#666e75; border-radius:3px; font-size:10px; }
 .filter-button.filtered { border-color:var(--red); color:var(--red-dark); }
 .result-count,.view-toolbar>p { margin-left:auto; color:var(--muted); font-size:11px; white-space:nowrap; }
+.time-machine-shell { position:relative; flex:0 0 auto; }
+.time-machine-button { width:184px; height:40px; display:grid; grid-template-columns:18px minmax(0,1fr) 14px; align-items:center; gap:7px; padding:0 9px; border:1px solid #485058; border-radius:4px; background:#292e32; color:#cbd0d4; text-align:left; }
+.time-machine-button:hover { border-color:var(--blue); color:#fff; }
+.time-machine-button>svg:first-child { color:var(--blue); }
+.time-machine-button>span { min-width:0; display:grid; gap:2px; }
+.time-machine-button strong,.time-machine-button small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.time-machine-button strong { color:#eef0f1; font-size:10px; text-transform:uppercase; }
+.time-machine-button small { color:#929ba2; font-size:8px; }
+.time-machine-button.active { border-color:#477696; background:#24323b; box-shadow:inset 3px 0 0 var(--blue); }
+.time-machine-popover { position:absolute; z-index:18; top:calc(100% + 9px); right:0; width:min(470px,calc(100vw - 34px)); overflow:hidden; border:1px solid #515960; border-radius:4px; background:#202428; color:#eef0f1; box-shadow:0 20px 48px rgba(0,0,0,.48); }
+.time-machine-popover>header { min-height:62px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px 10px 15px; border-bottom:1px solid #3d4348; }
+.time-machine-popover>header span { color:var(--blue); font-size:8px; font-weight:850; text-transform:uppercase; }
+.time-machine-popover>header h3 { margin:3px 0 0; font-size:17px; }
+.time-machine-status { min-height:67px; display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:10px; padding:10px 15px; border-bottom:1px solid #3d4348; background:#292e32; }
+.time-machine-status>svg { color:var(--gold); }
+.time-machine-status>span { display:grid; gap:3px; }
+.time-machine-status small { color:#9099a0; font-size:8px; font-weight:800; text-transform:uppercase; }
+.time-machine-status strong { font-size:14px; }
+.time-machine-status em { padding:5px 7px; border:1px solid #4b5359; border-radius:3px; color:#bfc6cb; font-size:9px; font-style:normal; font-weight:750; }
+.time-machine-date { display:grid; grid-template-columns:minmax(0,1fr) 190px; align-items:center; gap:14px; padding:13px 15px 8px; color:#aeb5bb; font-size:10px; font-weight:750; }
+.time-machine-date>div { height:40px; display:grid; grid-template-columns:20px minmax(0,1fr); align-items:center; gap:6px; padding:0 8px; border:1px solid #4b5359; border-radius:4px; background:#191c1f; color:var(--blue); }
+.time-machine-date input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:#fff; color-scheme:dark; font-size:12px; }
+.time-machine-slider { display:grid; gap:8px; padding:9px 15px 13px; }
+.time-machine-slider>span { display:grid; grid-template-columns:55px minmax(0,1fr) 55px; align-items:center; color:#8e979e; font-size:8px; }
+.time-machine-slider output { overflow:hidden; color:#dfe3e5; font-size:10px; font-weight:750; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
+.time-machine-slider b:last-child { text-align:right; }
+.time-machine-slider input { width:100%; margin:0; accent-color:var(--red); cursor:pointer; }
+.time-machine-playback { min-height:57px; display:grid; grid-template-columns:minmax(100px,1fr) 38px 90px 38px; align-items:center; gap:7px; padding:8px 15px; border-top:1px solid #363c41; border-bottom:1px solid #363c41; background:#1c2023; }
+.time-machine-playback select { width:100%; max-width:none; }
+.time-machine-playback .icon-button { width:38px; height:40px; }
+.time-machine-playback .icon-button:disabled { cursor:not-allowed; opacity:.35; }
+.time-machine-play { height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--red); border-radius:4px; background:var(--red); color:#fff; font-size:11px; font-weight:800; }
+.time-machine-play:hover { background:#e15749; }
+.time-machine-jumps { display:grid; grid-template-columns:repeat(4,1fr); padding:10px 12px; }
+.time-machine-jumps button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:5px; border:0; border-right:1px solid #3d4348; background:transparent; color:#abb3b9; font-size:9px; font-weight:750; }
+.time-machine-jumps button:last-child { border-right:0; }
+.time-machine-jumps button:hover,.time-machine-jumps button.active { color:#fff; background:#2b3034; }
+.time-machine-popover>footer { min-height:63px; display:grid; grid-template-columns:110px 130px minmax(0,1fr); align-items:center; border-top:1px solid #3d4348; background:#292e32; }
+.time-machine-popover>footer>span { display:grid; gap:3px; padding:0 12px; border-right:1px solid #41474d; }
+.time-machine-popover>footer strong { color:#fff; font-size:13px; }
+.time-machine-popover>footer span { color:#939ca3; font-size:8px; text-transform:uppercase; }
+.time-machine-popover>footer p { margin:0; padding:0 12px; color:#aeb5bb; font-size:9px; line-height:1.4; }
+.time-travel-snapshot { border-left-color:var(--blue); }
 .table-scroll { overflow:auto; max-height:calc(100vh - 330px); min-height:380px; }
 .table-scroll.free-height { max-height:none; }
 .progress-loader { min-height:48px; display:flex; align-items:center; justify-content:center; gap:9px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:700; }
@@ -416,6 +459,19 @@ tbody tr:hover td { background:#292e32; }
   .table-toolbar>select { min-width:0; max-width:none; flex:1 1 0; padding-left:8px; padding-right:20px; }
   .filter-button { min-width:0; flex:1.15 1 0; justify-content:center; margin:0; padding:0 7px; }
   .filter-button span { display:none; }
+  .time-machine-shell { flex:1 1 100%; }
+  .time-machine-button { width:100%; height:44px; grid-template-columns:18px minmax(0,1fr) 14px; }
+  .time-machine-button strong { font-size:11px; }
+  .time-machine-button small { font-size:9px; }
+  .time-machine-popover { position:fixed; top:auto; left:8px; right:8px; bottom:calc(76px + env(safe-area-inset-bottom)); width:auto; max-height:calc(100dvh - 92px); overflow:auto; z-index:45; }
+  .time-machine-popover>header { position:sticky; top:0; z-index:2; background:#202428; }
+  .time-machine-date { grid-template-columns:1fr; gap:7px; }
+  .time-machine-date>div { height:44px; }
+  .time-machine-playback { grid-template-columns:minmax(90px,1fr) 42px 92px 42px; padding-inline:11px; }
+  .time-machine-playback .icon-button { width:42px; height:42px; }
+  .time-machine-popover>footer { grid-template-columns:1fr 1fr; }
+  .time-machine-popover>footer>span { min-height:54px; align-content:center; }
+  .time-machine-popover>footer p { grid-column:1 / -1; padding:9px 12px; border-top:1px solid #41474d; }
   .view-toolbar .segmented { flex:1 1 0; }
   .view-toolbar .segmented button { min-width:0; flex:1; }
   .view-toolbar>select { flex:1 1 0; min-width:0; max-width:none; }
