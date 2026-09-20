@@ -71,11 +71,11 @@ export default function WrLineage({ runs, boards, gameNames, selectedGame, selec
   }
 
   return <section className="view-section lineage-view">
-    <div className="page-heading"><div><p className="eyebrow">Every crown change in the accepted archive</p><h2>WR Lineage</h2></div><Crown size={28} /></div>
+    <div className="page-heading"><div><p className="eyebrow">Documented records and accepted archive</p><h2>WR Lineage</h2></div><Crown size={28} /></div>
     <section className="lineage-controls" aria-label="WR Lineage filters">
       <label><span>Game</span><select value={activeGame} onChange={(change) => onSelectionChange(change.target.value, '')}>{games.map((item) => <option value={item} key={item}>{gameNames[item] || item}</option>)}</select></label>
       <label><span>Category and subcategory</span><select value={selectedBoard?.boardKey || ''} onChange={(change) => onSelectionChange(activeGame, change.target.value)}>{gameBoards.map((board) => <option value={board.boardKey} key={board.boardKey}>{insightBoardLabel(board)}</option>)}</select></label>
-      <div className="lineage-archive-note"><CalendarDays size={17} /><span><strong>{events.length} crown events</strong>Performed date first, verification date only as fallback</span></div>
+      <div className="lineage-archive-note"><CalendarDays size={17} /><span><strong>{events.length} crown events</strong>Performed date first; documented early records fill archive gaps</span></div>
     </section>
     {event && selectedBoard ? <div className="lineage-layout">
       <section className="lineage-stage" aria-live="polite">
@@ -104,10 +104,10 @@ export default function WrLineage({ runs, boards, gameNames, selectedGame, selec
           const link = safeRunLink(item.runLink);
           return <div className={`lineage-event-row ${itemIndex === activeIndex ? 'active' : ''} ${itemIndex < activeIndex ? 'past' : ''}`} key={item.id}><button onClick={() => { setPlaying(false); setIndex(itemIndex); }}>
               <span className="lineage-event-number">{itemIndex + 1}</span>
-              <span className="lineage-event-runner"><strong>{item.runner}</strong><small>{displayDate(item.date)} · {item.kind === 'tie' ? 'Joined the crown' : item.savedSeconds === null ? 'Opened the lineage' : `${formatRunTime(item.savedSeconds || 0)} saved`}</small></span>
+              <span className="lineage-event-runner"><strong>{item.runner}</strong><small>{displayDate(item.date)} · {item.documented ? 'Documented WR' : item.kind === 'tie' ? 'Joined the crown' : item.savedSeconds === null ? 'Opened the lineage' : `${formatRunTime(item.savedSeconds || 0)} saved`}</small></span>
               <b>{formatRunTime(item.seconds)}</b>
               <em>{longevity(item.survivedDays)}</em>
-            </button>{link ? <a href={link} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.runner}'s run`}><ExternalLink size={15} /></a> : <span />}</div>;
+            </button>{link ? <a href={link} target="_blank" rel="noopener noreferrer" aria-label={item.documented ? 'Open documented WR progression' : `Open ${item.runner}'s run`}><ExternalLink size={15} /></a> : <span />}</div>;
         })}</div>
       </section>
     </div> : <div className="lineage-empty"><Crown size={28} /><strong>No dated runs for this board</strong><span>Choose another game or category.</span></div>}

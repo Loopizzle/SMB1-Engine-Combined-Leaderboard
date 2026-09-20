@@ -1,4 +1,5 @@
 import { runPerformanceScore, type InsightCareerRun, type InsightPlayer } from './insights';
+import { withDocumentedWrHistory } from './historical-records';
 
 const TIME_TOLERANCE = 0.0005;
 const DAY_MS = 86_400_000;
@@ -29,6 +30,7 @@ export type WrLineageEvent = {
   survivedDays: number;
   kind: 'record' | 'tie';
   runLink: string | null;
+  documented: boolean;
 };
 
 function identity(playerKey: string | undefined, runner: string) {
@@ -54,10 +56,11 @@ export function archiveYears(runs: InsightCareerRun[]) {
 }
 
 export function historicalImpact(runs: InsightCareerRun[], players: InsightPlayer[], startYear: number, endYear: number): HistoricalImpactEntry[] {
+  const historicalRuns = withDocumentedWrHistory(runs);
   const start = Math.min(startYear, endYear);
   const end = Math.max(startYear, endYear);
-  const firstArchiveYear = Math.min(...archiveYears(runs), start);
-  const lastPeriod = runs.map(archivePeriod).filter((period) => /^\d{4}-\d{2}$/.test(period)).sort().at(-1) || `${end}-12`;
+  const firstArchiveYear = Math.min(...archiveYears(historicalRuns), start);
+  const lastPeriod = historicalRuns.map(archivePeriod).filter((period) => /^\d{4}-\d{2}$/.test(period)).sort().at(-1) || `${end}-12`;
   const lastArchiveYear = Math.min(end, Number(lastPeriod.slice(0, 4)) || end);
   const periods: string[] = [];
   for (let year = firstArchiveYear; year <= lastArchiveYear; year += 1) {
@@ -67,7 +70,7 @@ export function historicalImpact(runs: InsightCareerRun[], players: InsightPlaye
 
   const byPeriod = new Map<string, InsightCareerRun[]>();
   const latestRunByIdentity = new Map<string, InsightCareerRun>();
-  for (const run of runs) {
+  for (const run of historicalRuns) {
     const period = archivePeriod(run);
     const runner = String(run.runner || '').trim();
     const seconds = Number(run.seconds || 0);
@@ -168,12 +171,12 @@ export function historicalImpact(runs: InsightCareerRun[], players: InsightPlaye
 }
 
 export function wrLineage(runs: InsightCareerRun[], boardKey: string, asOf = new Date()): WrLineageEvent[] {
-  const dated = runs.filter((run) => run.boardKey === boardKey && Number(run.seconds || 0) > 0 && archiveDate(run)).sort((a, b) => archiveDate(a).localeCompare(archiveDate(b)) || Number(a.seconds) - Number(b.seconds) || String(a.id || '').localeCompare(String(b.id || '')));
+  const candidates = withDocumentedWrHistory(runs).filter((run) => run.boardKey === boardKey && Number(run.seconds || 0) > 0 && archiveDate(run)).map((run) => ({ id: String(run.id || ''), runner: String(run.runner || 'Unknown runner'), playerKey: String(run.playerKey || ''), date: archiveDate(run), seconds: Number(run.seconds), runLink: run.runLink ? String(run.runLink) : null })).sort((a, b) => a.date.localeCompare(b.date) || a.seconds - b.seconds || a.id.localeCompare(b.id));
   const events: WrLineageEvent[] = [];
   let recordSeconds = Number.POSITIVE_INFINITY;
   let holders = new Set<string>();
-  for (const run of dated) {
-    const seconds = Number(run.seconds);
+  for (const run of candidates) {
+    const seconds = run.seconds;
     const key = identity(run.playerKey, run.runner);
     const isRecord = seconds < recordSeconds - TIME_TOLERANCE;
     const isTie = Number.isFinite(recordSeconds) && Math.abs(seconds - recordSeconds) <= TIME_TOLERANCE && !holders.has(key);
@@ -186,19 +189,20 @@ export function wrLineage(runs: InsightCareerRun[], boardKey: string, asOf = new
       holders.add(key);
     }
     events.push({
-      id: String(run.id || `${boardKey}-${archiveDate(run)}-${key}-${seconds}`),
-      runner: String(run.runner || 'Unknown runner'),
+      id: String(run.id || `${boardKey}-${run.date}-${key}-${seconds}`),
+      runner: run.runner,
       playerKey: String(run.playerKey || key),
-      date: archiveDate(run),
+      date: run.date,
       seconds,
       savedSeconds: isRecord && Number.isFinite(previousRecord) ? previousRecord - seconds : isTie ? 0 : null,
       survivedDays: 0,
       kind: isTie ? 'tie' : 'record',
-      runLink: run.runLink ? String(run.runLink) : null,
+      runLink: run.runLink,
+      documented: run.id.startsWith('documented-'),
     });
   }
 
-  const finalDate = Math.max(asOf.getTime(), ...dated.map((run) => Date.parse(archiveDate(run))).filter(Number.isFinite));
+  const finalDate = Math.max(asOf.getTime(), ...candidates.map((run) => Date.parse(run.date)).filter(Number.isFinite));
   for (let index = 0; index < events.length; index += 1) {
     const nextRecord = events.slice(index + 1).find((event) => event.kind === 'record');
     const end = nextRecord ? Date.parse(nextRecord.date) : finalDate;

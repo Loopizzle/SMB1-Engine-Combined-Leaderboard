@@ -5,6 +5,7 @@ import { Activity, ArrowDown, ArrowUp, Award, CalendarDays, CalendarRange, Check
 import InsightsLab, { type LabMode } from './insights-lab';
 import type { InsightCareerRun, LabRegion } from './insights';
 import { acceptedDate, buildExtremeRanks, buildHistoricalRanks } from './extreme-ranks';
+import { withDocumentedWrHistory } from './historical-records';
 import RunnerInsights from './runner-insights';
 import WrLineage from './wr-lineage';
 import WorldView, { type RunnerMetadata, type WorldRun } from './world-view';
@@ -277,10 +278,10 @@ export default function Home() {
   }, [data, performanceWeight, timeMachineCareerRuns, varietyPerGame, volumeCoefficient]);
   const historicalLeaderboard = useMemo<{ players: Player[]; runs: Run[] }>(() => {
     if (!data || !timeMachineActive) return { players: [], runs: [] };
-    const result = buildHistoricalRanks(timeMachineCareerRuns, data.combined);
+    const result = buildHistoricalRanks(withDocumentedWrHistory(timeMachineCareerRuns, filteredCareerRuns, deferredAsOfDate), data.combined);
     const weighted = result.players.map((player) => { const performance = Number(player['Performance Score'] || 0) * performanceWeight; const volume = Math.sqrt(Number(player['Prolific Score'] || 0)) * volumeCoefficient; const variety = Math.max(0, Number(player['Unique Games'] || 0) - 1) * varietyPerGame; const medal = Number(player['Medal Score'] || 0); return { ...player, rawPerformance: Number(player['Performance Score'] || 0), 'Performance Score': performance, 'Volume Bonus': volume, 'Variety Bonus': variety, 'Total Score': performance + volume + variety + medal, 'Flag URL': player['Flag URL'] || countryFlagUrl(player.Country) } as Player; }).sort((a, b) => b['Total Score'] - a['Total Score'] || b['Performance Score'] - a['Performance Score'] || String(a.Runner).localeCompare(String(b.Runner))).map((player, index) => ({ ...player, Rank: index + 1 }));
     return { players: weighted, runs: result.runs };
-  }, [data, performanceWeight, timeMachineActive, timeMachineCareerRuns, varietyPerGame, volumeCoefficient]);
+  }, [data, deferredAsOfDate, filteredCareerRuns, performanceWeight, timeMachineActive, timeMachineCareerRuns, varietyPerGame, volumeCoefficient]);
   const insightBoards = useMemo(() => data?.boards.filter((board) => { const toggle = board.subcategory?.includes('Luigi') ? `${board.gameAbbr} (Luigi)` : board.gameAbbr; return selectedBoards.has(board.boardKey) && selectedGames.has(toggle); }) || [], [data, selectedBoards, selectedGames]);
   const scoredPlayers = useMemo(() => {
     if (!data) return [];
