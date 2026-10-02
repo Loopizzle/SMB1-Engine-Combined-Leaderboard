@@ -3,11 +3,13 @@ name: Deploy website to GitHub Pages
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '30 7 * * *'
-    # GitHub schedules are best-effort, so retry later if the morning event is skipped.
-    - cron: '30 13 * * *'
   workflow_dispatch:
+    inputs:
+      refresh_data:
+        description: Refresh external leaderboard data before deployment
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -34,18 +36,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Set up Python
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
           cache: pip
           cache-dependency-path: requirements-data.txt
       - name: Install data refresh dependency
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
         run: python -m pip install --disable-pip-version-check --no-compile -r requirements-data.txt
       - name: Refresh data from the public workbook
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
         run: python scripts/refresh-site-data.py
       - name: Build latest-update digest
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
         run: python scripts/refresh-activity.py
       - name: Refresh public runner locations
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
         run: python scripts/refresh-runner-metadata.py --max-new 60 --workers 3
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
