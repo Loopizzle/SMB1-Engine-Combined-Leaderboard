@@ -606,6 +606,7 @@ def main():
     parser = argparse.ArgumentParser(description="Refresh website data from the public Google Sheet")
     parser.add_argument("--workbook", type=Path, help="Use a local workbook instead of downloading it")
     parser.add_argument("--output", type=Path, default=ROOT / "public" / "site-data.json")
+    parser.add_argument("--skip-flag-cache", action="store_true", help="Do not download flag assets from Speedrun.com")
     args = parser.parse_args()
 
     spreadsheet_id = os.environ.get("SMB1ECL_SPREADSHEET_ID", DEFAULT_SPREADSHEET_ID)
@@ -615,7 +616,8 @@ def main():
             download_workbook(spreadsheet_id, workbook_path)
         payload = extract_payload(workbook_path)
         validate_payload(payload)
-        cache_flag_assets(payload)
+        if not args.skip_flag_cache:
+            cache_flag_assets(payload)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary_output = args.output.with_suffix(args.output.suffix + ".tmp")

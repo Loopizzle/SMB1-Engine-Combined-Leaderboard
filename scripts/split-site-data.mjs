@@ -11,6 +11,7 @@ if (!existsSync(sourcePath)) {
 }
 
 const source = await readFile(sourcePath, 'utf8');
+const payload = JSON.parse(source);
 await mkdir(outputDir, { recursive: true });
 
 for (const file of await readdir(outputDir)) {
@@ -38,3 +39,14 @@ await writeFile(
   `${JSON.stringify({ parts }, null, 2)}\n`,
   'utf8',
 );
+
+const csvColumns = Object.keys(payload.combined?.[0] || {}).filter((column) => column !== 'Flag URL');
+const csvCell = (value) => {
+  const text = value == null ? '' : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+};
+const csv = [
+  csvColumns.map(csvCell).join(','),
+  ...(payload.combined || []).map((row) => csvColumns.map((column) => csvCell(row[column])).join(',')),
+].join('\n');
+await writeFile(join('public', 'combined-leaderboard.csv'), `${csv}\n`, 'utf8');

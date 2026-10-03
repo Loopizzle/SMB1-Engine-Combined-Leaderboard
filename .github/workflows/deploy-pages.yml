@@ -6,10 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       refresh_data:
-        description: Refresh external leaderboard data before deployment
+        description: Refresh external data (requires documented written authorization)
         required: false
         default: false
         type: boolean
+      authorization_reference:
+        description: Written permission reference (required when refreshing)
+        required: false
+        type: string
 
 permissions: {}
 
@@ -30,6 +34,21 @@ jobs:
           persist-credentials: false
       - name: Enable pnpm
         run: corepack enable
+      - name: Verify refresh authorization
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_data }}
+        env:
+          REFRESH_AUTHORIZED: ${{ vars.SRC_REFRESH_AUTHORIZED }}
+          AUTHORIZATION_REFERENCE: ${{ inputs.authorization_reference }}
+        run: |
+          if [ "$REFRESH_AUTHORIZED" != "true" ]; then
+            echo "External refresh is paused. Set SRC_REFRESH_AUTHORIZED=true only after written authorization is received."
+            exit 1
+          fi
+          if [ -z "$AUTHORIZATION_REFERENCE" ]; then
+            echo "A written permission reference is required for every authorized refresh."
+            exit 1
+          fi
+          echo "Authorized refresh reference: $AUTHORIZATION_REFERENCE"
       - name: Set up Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
