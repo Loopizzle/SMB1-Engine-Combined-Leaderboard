@@ -6,7 +6,7 @@ This project is not a replacement for Speedrun.com and does not accept or verify
 
 ## Data status
 
-Automated external refreshes are paused following the Speedrun.com Terms of Use change effective October 1, 2026. The published site uses a preserved pre-change dataset. See [DATA_PROVENANCE.md](DATA_PROVENANCE.md) for attribution, licensing context, provenance, and the refresh policy.
+The published data refreshes once per day from the project's public Google Sheets workbook. Speedrun.com provided written permission for this community analytics project on October 5, 2026. See [DATA_PROVENANCE.md](DATA_PROVENANCE.md) for attribution, permission context, and the refresh policy.
 
 ## Development
 
@@ -17,12 +17,12 @@ pnpm run dev
 
 ## GitHub Pages
 
-Every push to `main` builds and deploys the static website from the checked-in snapshot. Ordinary deployments do not contact Speedrun.com or refresh external data.
+Every push to `main` builds and deploys the static website from the checked-in data. When the repository variable `SRC_REFRESH_AUTHORIZED` is `true`, a scheduled workflow refreshes the public workbook data once per day at approximately 07:30 UTC; GitHub Actions schedules are best-effort.
 
-Refresh code is intentionally retained but permission-gated. To run it after written authorization is received:
+To request an additional refresh:
 
-1. Set the repository variable `SRC_REFRESH_AUTHORIZED` to `true`.
-2. Run the deploy workflow manually with `refresh_data` enabled.
-3. Supply a written authorization reference in the workflow input.
+1. Run the deploy workflow manually.
+2. Leave `refresh_data` enabled.
+3. Keep the repository variable `SRC_REFRESH_AUTHORIZED` set to `true`.
 
-Removing any one of those conditions keeps the refresh disabled. The intended custom domain is `smb1ecl.loopie.fr`.
+A push deployment does not refresh external data. Setting `SRC_REFRESH_AUTHORIZED` to any value other than `true` immediately disables both scheduled and manual refreshes. The intended custom domain is `smb1ecl.loopie.fr`.

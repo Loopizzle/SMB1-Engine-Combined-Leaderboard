@@ -6,11 +6,11 @@ The SMB1 Engine Combined Leaderboard is an unofficial, noncommercial analytics p
 
 The name "Combined Leaderboard" refers only to a community-created cross-game scoring model. The project does not replace Speedrun.com, accept submissions, verify runs, establish records, or override game rules. Runs count only after they have been submitted to and accepted by Speedrun.com. Speedrun.com remains the authoritative record and verification platform.
 
-## Published snapshot
+## Historical snapshot
 
-The checked-in leaderboard snapshot and cached profile metadata were acquired before Speedrun.com's revised Terms of Use took effect on October 1, 2026. Speedrun.com's own announcement explains that its previous terms placed leaderboard data under a Creative Commons license and that removal of that blanket permission applies going forward.
+The project preserves a historical workbook snapshot from before Speedrun.com's revised Terms of Use took effect on October 1, 2026. Speedrun.com's own announcement explains that its previous terms placed leaderboard data under a Creative Commons license and that removal of that blanket permission applies going forward.
 
-The final pre-pause dataset was recovered from the workbook's October 1, 2026 version history and checked against GitHub Actions run 36910892716. The deployment log records 7,182 current runs, 19,851 accepted historical runs, 2,786 ranked runners, 9,583 monthly rows, and 4,476 yearly rows. The preserved archive includes that source workbook and cryptographic hashes so the files can be checked for later alteration.
+The final pre-change dataset was recovered directly from the original workbook's September 30, 2026 version history. An independently timestamped GitHub Actions deployment on September 30 confirms that the workbook was processed and published before the Terms update. The preserved source workbook and cryptographic hash provide an immutable fallback and provenance record.
 
 The pre-change material is preserved and attributed under Creative Commons Attribution-NonCommercial 4.0 International as it applied when the material was acquired:
 
@@ -23,15 +23,11 @@ Creative Commons licenses cover only rights the licensor was entitled to license
 
 ## Refresh policy
 
-Automated external refreshes are paused. Normal builds use only checked-in data and make no Speedrun.com API or workbook requests.
+Speedrun.com provided written permission for this specific community analytics project on October 5, 2026. The authorization confirms that the project is safe to continue and recognizes it as a community tool rather than a replacement for Speedrun.com. The private correspondence is retained by the project owner.
 
-The refresh implementation is retained so the project can resume if appropriate written authorization is received. The deployment workflow requires all of the following before it can refresh:
+The deployment workflow therefore refreshes the public workbook data once per day while the repository variable `SRC_REFRESH_AUTHORIZED` is explicitly set to `true`. Scheduled refreshes are deliberately low-frequency to avoid unnecessary load. Manual refreshes remain available when an additional update is needed.
 
-1. A manual workflow run with data refresh explicitly selected.
-2. The repository variable `SRC_REFRESH_AUTHORIZED=true`.
-3. A written authorization reference supplied with that run.
-
-New Speedrun.com data will not be imported without written permission or an independently licensed source with sufficient redistribution rights. Receiving data through another website does not by itself create those rights.
+Push-triggered builds use the checked-in data and do not perform an external refresh. Changing or removing `SRC_REFRESH_AUTHORIZED` immediately disables external refreshes. If permission is withdrawn or the project's purpose materially changes, automated refreshes should be paused and reviewed again.
 
 ## Attribution and independence
 
